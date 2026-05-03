@@ -4,6 +4,7 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
@@ -11,6 +12,7 @@ import android.os.Looper
 import androidx.core.app.NotificationCompat
 import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
+import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.example.gpstracker.data.AppDatabase
 import com.example.gpstracker.data.LocationPoint
 import com.example.gpstracker.data.Session
@@ -40,6 +42,30 @@ class TrackingService : LifecycleService() {
         const val NOTIFICATION_ID = 1
         const val ACTION_START = "ACTION_START"
         const val ACTION_STOP = "ACTION_STOP"
+        const val ACTION_BROADCAST_STATE_CHANGED = "com.example.gpstracker.TRACKING_STATE_CHANGED"
+        const val EXTRA_IS_TRACKING = "is_tracking"
+        const val PREFS_NAME = "gps_tracker_prefs"
+        const val KEY_IS_TRACKING = "is_tracking"
+
+        fun setTrackingState(context: Context, isTracking: Boolean) {
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean(KEY_IS_TRACKING, isTracking)
+                .apply()
+        }
+
+        fun isTrackingActive(context: Context): Boolean {
+            return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getBoolean(KEY_IS_TRACKING, false)
+        }
+
+        fun broadcastStateChanged(context: Context, isTracking: Boolean) {
+            val intent = Intent(ACTION_BROADCAST_STATE_CHANGED).apply {
+                putExtra(EXTRA_IS_TRACKING, isTracking)
+                setPackage(context.packageName)
+            }
+            LocalBroadcastManager.getInstance(context).sendBroadcast(intent)
+        }
     }
 
     override fun onCreate() {
@@ -133,6 +159,9 @@ class TrackingService : LifecycleService() {
             )
             currentSessionId = db.sessionDao().insertSession(session)
 
+            setTrackingState(this@TrackingService, true)
+            broadcastStateChanged(this@TrackingService, true)
+
             updateJob = launch {
                 while (isActive) {
                     delay(2000)
@@ -199,6 +228,9 @@ class TrackingService : LifecycleService() {
             }
             currentSessionId = -1
             pointCount = 0
+
+            setTrackingState(this@TrackingService, false)
+            broadcastStateChanged(this@TrackingService, false)
         }
 
         stopForeground(STOP_FOREGROUND_REMOVE)

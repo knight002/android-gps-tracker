@@ -1,7 +1,10 @@
 package com.example.gpstracker
 
 import android.Manifest
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -11,6 +14,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.lifecycle.lifecycleScope
+import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.example.gpstracker.data.AppDatabase
@@ -27,7 +31,14 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var database: AppDatabase
     private lateinit var sessionAdapter: SessionAdapter
-    private var isTracking = false
+
+    private val stateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            intent?.getBooleanExtra(TrackingService.EXTRA_IS_TRACKING, false)?.let { isTracking ->
+                updateButtonState(isTracking)
+            }
+        }
+    }
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -60,20 +71,69 @@ class MainActivity : AppCompatActivity() {
 
         setupRecyclerView()
         setupTrackingButton()
-        checkIfTracking()
-
         observeSessions()
     }
 
-    private fun setupRecyclerView() {
-        sessionAdapter = SessionAdapter { session ->
-            val intent = Intent(this, SessionDetailActivity::class.java)
-            intent.putExtra("SESSION_ID", session.id)
-            startActivity(intent)
+    override fun onResume() {
+        super.onResume()
+        val isTracking = TrackingService.isTrackingActive(this)
+        updateButtonState(isTracking)
+        registerStateReceiver()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        try {
+            LocalBroadcastManager.getInstance(this).unregisterReceiver(stateReceiver)
+        } catch (_: Exception) {
         }
+    }
+
+    private fun registerStateReceiver() {
+        try {
+            LocalBroadcastManager.getInstance(this).unregisterReceiver(stateReceiver)
+        } catch (_: Exception) {
+        }
+        val filter = IntentFilter(TrackingService.ACTION_BROADCAST_STATE_CHANGED)
+        LocalBroadcastManager.getInstance(this).registerReceiver(stateReceiver, filter)
+    }
+
+    private fun setupRecyclerView() {
+        sessionAdapter = SessionAdapter(
+            onSessionClick = { session ->
+                val intent = Intent(this, SessionDetailActivity::class.java)
+                intent.putExtra("SESSION_ID", session.id)
+                startActivity(intent)
+            },
+            onSessionDelete = { session ->
+                showDeleteConfirmation(session)
+            }
+        )
         binding.sessionsRecyclerView.apply {
             layoutManager = LinearLayoutManager(this@MainActivity)
             adapter = sessionAdapter
+        }
+    }
+
+    private fun showDeleteConfirmation(session: Session) {
+        AlertDialog.Builder(this)
+            .setTitle("Delete Session")
+            .setMessage("Are you sure you want to delete this tracking session?")
+            .setPositiveButton("Delete") { _, _ ->
+                deleteSession(session)
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun deleteSession(session: Session) {
+        lifecycleScope.launch {
+            val db = AppDatabase.getDatabase(this@MainActivity)
+            db.sessionDao().deleteSession(session)
+            db.locationPointDao().deletePointsBySession(session.id)
+            withContext(Dispatchers.Main) {
+                Toast.makeText(this@MainActivity, "Session deleted", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
@@ -117,7 +177,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun toggleTracking() {
-        if (isTracking) {
+        if (TrackingService.isTrackingActive(this)) {
             stopTracking()
         } else {
             startTracking()
@@ -133,8 +193,8 @@ class MainActivity : AppCompatActivity() {
         } else {
             startService(intent)
         }
-        isTracking = true
-        updateButtonState()
+        TrackingService.setTrackingState(this, true)
+        updateButtonState(true)
         Toast.makeText(this, "Tracking started", Toast.LENGTH_SHORT).show()
     }
 
@@ -143,18 +203,12 @@ class MainActivity : AppCompatActivity() {
             action = TrackingService.ACTION_STOP
         }
         startService(intent)
-        isTracking = false
-        updateButtonState()
+        TrackingService.setTrackingState(this, false)
+        updateButtonState(false)
         Toast.makeText(this, "Tracking stopped", Toast.LENGTH_SHORT).show()
     }
 
-    private fun checkIfTracking() {
-        val intent = Intent(this, TrackingService::class.java)
-        isTracking = false
-        updateButtonState()
-    }
-
-    private fun updateButtonState() {
+    private fun updateButtonState(isTracking: Boolean) {
         if (isTracking) {
             binding.trackButton.text = "Stop Tracking"
             binding.trackButton.setBackgroundColor(getColor(android.R.color.holo_red_dark))
@@ -183,7 +237,8 @@ class MainActivity : AppCompatActivity() {
 }
 
 class SessionAdapter(
-    private val onSessionClick: (Session) -> Unit
+    private val onSessionClick: (Session) -> Unit,
+    private val onSessionDelete: (Session) -> Unit
 ) : RecyclerView.Adapter<SessionAdapter.SessionViewHolder>() {
 
     private var sessions: List<Session> = emptyList()
@@ -236,6 +291,10 @@ class SessionAdapter(
             }
 
             itemView.setOnClickListener { onSessionClick(session) }
+
+            itemView.findViewById<android.widget.ImageButton>(R.id.deleteButton).setOnClickListener {
+                onSessionDelete(session)
+            }
         }
     }
 }
