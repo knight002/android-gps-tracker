@@ -1,5 +1,6 @@
 package com.example.gpstracker
 
+import android.app.ActivityManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -28,6 +29,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 
 class TrackingService : LifecycleService() {
 
@@ -47,16 +49,25 @@ class TrackingService : LifecycleService() {
         const val PREFS_NAME = "gps_tracker_prefs"
         const val KEY_IS_TRACKING = "is_tracking"
 
+        fun isServiceRunning(context: Context): Boolean {
+            val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+            for (service in manager.getRunningServices(Int.MAX_VALUE)) {
+                if (TrackingService::class.java.name == service.service.className) {
+                    return true
+                }
+            }
+            return false
+        }
+
         fun setTrackingState(context: Context, isTracking: Boolean) {
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                 .edit()
                 .putBoolean(KEY_IS_TRACKING, isTracking)
-                .apply()
+                .commit()
         }
 
         fun isTrackingActive(context: Context): Boolean {
-            return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                .getBoolean(KEY_IS_TRACKING, false)
+            return isServiceRunning(context)
         }
 
         fun broadcastStateChanged(context: Context, isTracking: Boolean) {
@@ -212,16 +223,16 @@ class TrackingService : LifecycleService() {
         fusedLocationClient.removeLocationUpdates(locationCallback)
         updateJob?.cancel()
 
-        lifecycleScope.launch(Dispatchers.IO) {
+        runBlocking(Dispatchers.IO) {
             val db = AppDatabase.getDatabase(this@TrackingService)
             if (currentSessionId != -1L) {
                 val session = db.sessionDao().getSessionById(currentSessionId)
                 session?.let {
-                    val pointCount = db.locationPointDao().getPointCount(currentSessionId)
+                    val pc = db.locationPointDao().getPointCount(currentSessionId)
                     db.sessionDao().updateSession(
                         it.copy(
                             endTime = System.currentTimeMillis(),
-                            totalPoints = pointCount
+                            totalPoints = pc
                         )
                     )
                 }

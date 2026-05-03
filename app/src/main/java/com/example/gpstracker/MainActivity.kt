@@ -86,8 +86,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        val isTracking = TrackingService.isTrackingActive(this)
-        updateButtonState(isTracking)
+        syncTrackingState()
         registerStateReceiver()
     }
 
@@ -97,6 +96,11 @@ class MainActivity : AppCompatActivity() {
             LocalBroadcastManager.getInstance(this).unregisterReceiver(stateReceiver)
         } catch (_: Exception) {
         }
+    }
+
+    private fun syncTrackingState() {
+        val isRunning = TrackingService.isServiceRunning(this)
+        updateButtonState(isRunning)
     }
 
     private fun registerStateReceiver() {
@@ -244,7 +248,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun toggleTracking() {
-        if (TrackingService.isTrackingActive(this)) {
+        if (TrackingService.isServiceRunning(this)) {
             stopTracking()
         } else {
             startTracking()
@@ -270,7 +274,6 @@ class MainActivity : AppCompatActivity() {
             action = TrackingService.ACTION_STOP
         }
         startService(intent)
-        TrackingService.setTrackingState(this, false)
         updateButtonState(false)
         Toast.makeText(this, "Tracking stopped", Toast.LENGTH_SHORT).show()
     }
