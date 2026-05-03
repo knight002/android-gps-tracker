@@ -6,8 +6,10 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
@@ -21,6 +23,7 @@ import com.example.gpstracker.data.AppDatabase
 import com.example.gpstracker.data.Session
 import com.example.gpstracker.databinding.ActivityMainBinding
 import com.example.gpstracker.utils.DistanceCalculator
+import com.example.gpstracker.utils.Updater
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -62,6 +65,12 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private val installPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        checkForUpdates()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
@@ -71,6 +80,7 @@ class MainActivity : AppCompatActivity() {
 
         setupRecyclerView()
         setupTrackingButton()
+        setupUpdateButton()
         observeSessions()
     }
 
@@ -143,6 +153,63 @@ class MainActivity : AppCompatActivity() {
                 requestPermissions()
             } else {
                 toggleTracking()
+            }
+        }
+    }
+
+    private fun setupUpdateButton() {
+        binding.updateButton.setOnClickListener {
+            checkForUpdates()
+        }
+    }
+
+    private fun checkForUpdates() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !packageManager.canRequestPackageInstalls()) {
+            AlertDialog.Builder(this)
+                .setTitle("Permission Required")
+                .setMessage("This app needs permission to install updates. Please enable 'Install unknown apps' for GPS Tracker.")
+                .setPositiveButton("Open Settings") { _, _ ->
+                    val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES)
+                    intent.data = Uri.parse("package:$packageName")
+                    installPermissionLauncher.launch(intent)
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
+            return
+        }
+
+        binding.updateButton.isEnabled = false
+        binding.updateButton.text = "Checking..."
+
+        lifecycleScope.launch {
+            val updateInfo = Updater.checkForUpdates()
+
+            withContext(Dispatchers.Main) {
+                binding.updateButton.isEnabled = true
+                binding.updateButton.text = "Check for Updates"
+
+                if (updateInfo == null) {
+                    Toast.makeText(this@MainActivity, "No updates found or failed to check", Toast.LENGTH_LONG).show()
+                    return@withContext
+                }
+
+                val info = updateInfo
+                AlertDialog.Builder(this@MainActivity)
+                    .setTitle("Update Available: ${info.versionName}")
+                    .setMessage(info.releaseNotes)
+                    .setPositiveButton("Download & Install") { _, _ ->
+                        binding.updateButton.isEnabled = false
+                        binding.updateButton.text = "Downloading..."
+                        lifecycleScope.launch {
+                            Updater.downloadAndInstall(this@MainActivity, info)
+                            withContext(Dispatchers.Main) {
+                                binding.updateButton.isEnabled = true
+                                binding.updateButton.text = "Check for Updates"
+                            }
+                        }
+                    }
+                    .setNegativeButton("Cancel", null)
+                    .show()
             }
         }
     }
