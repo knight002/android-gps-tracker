@@ -34,12 +34,13 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var database: AppDatabase
     private lateinit var sessionAdapter: SessionAdapter
+    private var isCurrentlyPaused = false
 
     private val stateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            intent?.getBooleanExtra(TrackingService.EXTRA_IS_TRACKING, false)?.let { isTracking ->
-                updateButtonState(isTracking)
-            }
+            val isTracking = intent?.getBooleanExtra(TrackingService.EXTRA_IS_TRACKING, false) ?: false
+            val isPaused = intent?.getBooleanExtra(TrackingService.EXTRA_IS_PAUSED, false) ?: false
+            updateButtonState(isTracking, isPaused)
         }
     }
 
@@ -100,7 +101,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun syncTrackingState() {
         val isRunning = TrackingService.isServiceRunning(this)
-        updateButtonState(isRunning)
+        if (isRunning) {
+            updateButtonState(true, isCurrentlyPaused)
+        } else {
+            updateButtonState(false, false)
+        }
     }
 
     private fun registerStateReceiver() {
@@ -197,18 +202,32 @@ class MainActivity : AppCompatActivity() {
                     return@withContext
                 }
 
+                val currentVersion = try {
+                    packageManager.getPackageInfo(packageName, 0).versionName
+                } catch (_: Exception) { null }
+
                 val info = updateInfo
+                val isNewer = currentVersion == null || info.versionName != currentVersion
+
+                if (!isNewer) {
+                    Toast.makeText(this@MainActivity, "Already on latest version: $currentVersion", Toast.LENGTH_LONG).show()
+                    return@withContext
+                }
+
                 AlertDialog.Builder(this@MainActivity)
                     .setTitle("Update Available: ${info.versionName}")
-                    .setMessage(info.releaseNotes)
+                    .setMessage("Current: $currentVersion\n\n${info.releaseNotes}")
                     .setPositiveButton("Download & Install") { _, _ ->
                         binding.updateButton.isEnabled = false
                         binding.updateButton.text = "Downloading..."
                         lifecycleScope.launch {
-                            Updater.downloadAndInstall(this@MainActivity, info)
+                            val success = Updater.downloadAndInstall(this@MainActivity, info)
                             withContext(Dispatchers.Main) {
                                 binding.updateButton.isEnabled = true
                                 binding.updateButton.text = "Check for Updates"
+                                if (success) {
+                                    Toast.makeText(this@MainActivity, "Installing update...", Toast.LENGTH_SHORT).show()
+                                }
                             }
                         }
                     }
@@ -249,7 +268,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun toggleTracking() {
         if (TrackingService.isServiceRunning(this)) {
-            stopTracking()
+            if (isCurrentlyPaused) {
+                Toast.makeText(this, "Already paused. Stop tracking to end session.", Toast.LENGTH_SHORT).show()
+            } else {
+                stopTracking()
+            }
         } else {
             startTracking()
         }
@@ -264,8 +287,7 @@ class MainActivity : AppCompatActivity() {
         } else {
             startService(intent)
         }
-        TrackingService.setTrackingState(this, true)
-        updateButtonState(true)
+        updateButtonState(true, false)
         Toast.makeText(this, "Tracking started", Toast.LENGTH_SHORT).show()
     }
 
@@ -274,15 +296,23 @@ class MainActivity : AppCompatActivity() {
             action = TrackingService.ACTION_STOP
         }
         startService(intent)
-        updateButtonState(false)
+        updateButtonState(false, false)
         Toast.makeText(this, "Tracking stopped", Toast.LENGTH_SHORT).show()
     }
 
-    private fun updateButtonState(isTracking: Boolean) {
+    private fun updateButtonState(isTracking: Boolean, isPaused: Boolean) {
+        isCurrentlyPaused = isPaused
+
         if (isTracking) {
-            binding.trackButton.text = "Stop Tracking"
-            binding.trackButton.setBackgroundColor(getColor(android.R.color.holo_red_dark))
-            binding.statusText.text = "Tracking active..."
+            if (isPaused) {
+                binding.trackButton.text = "Resume Tracking"
+                binding.trackButton.setBackgroundColor(getColor(android.R.color.holo_orange_dark))
+                binding.statusText.text = "Tracking paused (dwelling)"
+            } else {
+                binding.trackButton.text = "Stop Tracking"
+                binding.trackButton.setBackgroundColor(getColor(android.R.color.holo_red_dark))
+                binding.statusText.text = "Tracking active..."
+            }
         } else {
             binding.trackButton.text = "Start Tracking"
             binding.trackButton.setBackgroundColor(getColor(android.R.color.holo_green_dark))

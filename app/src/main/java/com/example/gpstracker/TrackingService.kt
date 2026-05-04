@@ -46,8 +46,12 @@ class TrackingService : LifecycleService() {
         const val ACTION_STOP = "ACTION_STOP"
         const val ACTION_BROADCAST_STATE_CHANGED = "com.example.gpstracker.TRACKING_STATE_CHANGED"
         const val EXTRA_IS_TRACKING = "is_tracking"
+        const val EXTRA_IS_PAUSED = "is_paused"
         const val PREFS_NAME = "gps_tracker_prefs"
         const val KEY_IS_TRACKING = "is_tracking"
+
+        private const val DWELL_TIMEOUT_MS = 5 * 60 * 1000L
+        private const val MOVEMENT_THRESHOLD_M = 20.0
 
         fun isServiceRunning(context: Context): Boolean {
             val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
@@ -59,25 +63,22 @@ class TrackingService : LifecycleService() {
             return false
         }
 
-        fun setTrackingState(context: Context, isTracking: Boolean) {
-            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                .edit()
-                .putBoolean(KEY_IS_TRACKING, isTracking)
-                .commit()
-        }
-
-        fun isTrackingActive(context: Context): Boolean {
-            return isServiceRunning(context)
-        }
-
-        fun broadcastStateChanged(context: Context, isTracking: Boolean) {
+        fun broadcastStateChanged(context: Context, isTracking: Boolean, isPaused: Boolean) {
             val intent = Intent(ACTION_BROADCAST_STATE_CHANGED).apply {
                 putExtra(EXTRA_IS_TRACKING, isTracking)
+                putExtra(EXTRA_IS_PAUSED, isPaused)
                 setPackage(context.packageName)
             }
             LocalBroadcastManager.getInstance(context).sendBroadcast(intent)
         }
     }
+
+    private var isPaused = false
+    private var lastLat: Double? = null
+    private var lastLng: Double? = null
+    private var pausedLat: Double? = null
+    private var pausedLng: Double? = null
+    private var lastMovementTime: Long = 0L
 
     override fun onCreate() {
         super.onCreate()
@@ -113,12 +114,14 @@ class TrackingService : LifecycleService() {
         }
     }
 
-    private fun createNotification(): Notification {
+    private fun createNotification(isPaused: Boolean): Notification {
+        val title = if (isPaused) "GPS Tracking (Paused)" else "GPS Tracking Active"
+        val content = if (isPaused) "Dwelling - waiting for movement..." else "Recording your location..."
         val stopIntent = Intent(this, TrackingService::class.java).apply { action = ACTION_STOP }
         val pendingIntent = PendingIntent.getService(this, 0, stopIntent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("GPS Tracking Active")
-            .setContentText("Recording your location...")
+            .setContentTitle(title)
+            .setContentText(content)
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
             .setOngoing(true)
             .addAction(
@@ -130,29 +133,25 @@ class TrackingService : LifecycleService() {
     }
 
     private fun startTracking() {
-        val notification = createNotification()
+        val notification = createNotification(false)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
 
+        isPaused = false
+        lastLat = null
+        lastLng = null
+        pausedLat = null
+        pausedLng = null
+        lastMovementTime = System.currentTimeMillis()
+        pointCount = 0
+
         locationCallback = object : LocationCallback() {
             override fun onLocationResult(result: LocationResult) {
                 result.lastLocation?.let { location ->
-                    lifecycleScope.launch(Dispatchers.IO) {
-                        val db = AppDatabase.getDatabase(this@TrackingService)
-                        val point = LocationPoint(
-                            sessionId = currentSessionId,
-                            latitude = location.latitude,
-                            longitude = location.longitude,
-                            altitude = location.altitude,
-                            timestamp = System.currentTimeMillis()
-                        )
-                        db.locationPointDao().insertPoint(point)
-                        pointCount++
-                        updateNotification()
-                    }
+                    handleLocation(location)
                 }
             }
         }
@@ -170,8 +169,7 @@ class TrackingService : LifecycleService() {
             )
             currentSessionId = db.sessionDao().insertSession(session)
 
-            setTrackingState(this@TrackingService, true)
-            broadcastStateChanged(this@TrackingService, true)
+            broadcastStateChanged(this@TrackingService, true, false)
 
             updateJob = launch {
                 while (isActive) {
@@ -188,6 +186,89 @@ class TrackingService : LifecycleService() {
         }
     }
 
+    private fun handleLocation(location: android.location.Location) {
+        val lat = location.latitude
+        val lng = location.longitude
+        val alt = location.altitude
+
+        if (isPaused) {
+            handlePausedLocation(lat, lng, alt)
+        } else {
+            handleActiveLocation(lat, lng, alt)
+        }
+    }
+
+    private fun handleActiveLocation(lat: Double, lng: Double, altitude: Double) {
+        var shouldRecord = false
+
+        if (lastLat == null || lastLng == null) {
+            shouldRecord = true
+            lastLat = lat
+            lastLng = lng
+            lastMovementTime = System.currentTimeMillis()
+        } else {
+            val dist = DistanceCalculator.haversineDistance(lastLat!!, lastLng!!, lat, lng)
+            if (dist > MOVEMENT_THRESHOLD_M) {
+                shouldRecord = true
+                lastLat = lat
+                lastLng = lng
+                lastMovementTime = System.currentTimeMillis()
+            } else {
+                val elapsed = System.currentTimeMillis() - lastMovementTime
+                if (elapsed > DWELL_TIMEOUT_MS) {
+                    isPaused = true
+                    pausedLat = lastLat
+                    pausedLng = lastLng
+                    lifecycleScope.launch(Dispatchers.Main) {
+                        updateNotification()
+                    }
+                    lastMovementTime = System.currentTimeMillis()
+                }
+            }
+        }
+
+        if (shouldRecord) {
+            recordPoint(lat, lng, altitude)
+        }
+    }
+
+    private fun handlePausedLocation(lat: Double, lng: Double, altitude: Double) {
+        val dist = if (pausedLat != null && pausedLng != null) {
+            DistanceCalculator.haversineDistance(pausedLat!!, pausedLng!!, lat, lng)
+        } else {
+            0.0
+        }
+
+        if (dist > MOVEMENT_THRESHOLD_M) {
+            isPaused = false
+            pausedLat = null
+            pausedLng = null
+            lastLat = lat
+            lastLng = lng
+            lastMovementTime = System.currentTimeMillis()
+
+            recordPoint(lat, lng, altitude)
+
+            broadcastStateChanged(this, true, false)
+        }
+    }
+
+    private fun recordPoint(lat: Double, lng: Double, altitude: Double) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            val db = AppDatabase.getDatabase(this@TrackingService)
+            val point = LocationPoint(
+                sessionId = currentSessionId,
+                latitude = lat,
+                longitude = lng,
+                altitude = altitude,
+                timestamp = System.currentTimeMillis()
+            )
+            db.locationPointDao().insertPoint(point)
+            pointCount++
+            updateNotification()
+        }
+    }
+
     private fun updateNotification() {
         lifecycleScope.launch(Dispatchers.IO) {
             val db = AppDatabase.getDatabase(this@TrackingService)
@@ -199,12 +280,19 @@ class TrackingService : LifecycleService() {
             val startTime = session?.startTime ?: System.currentTimeMillis()
             val durationStr = DistanceCalculator.formatDuration(System.currentTimeMillis() - startTime)
 
+            val title = if (isPaused) "GPS Tracking (Paused)" else "GPS Tracking Active"
+            val content = if (isPaused) {
+                "Paused - waiting for movement"
+            } else {
+                "Points: $pointCount | $distanceStr | $durationStr"
+            }
+
             val stopIntent = Intent(this@TrackingService, TrackingService::class.java).apply { action = ACTION_STOP }
             val pendingIntent = PendingIntent.getService(this@TrackingService, 0, stopIntent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
 
             val notification = NotificationCompat.Builder(this@TrackingService, CHANNEL_ID)
-                .setContentTitle("GPS Tracking Active")
-                .setContentText("Points: $pointCount | $distanceStr | $durationStr")
+                .setContentTitle(title)
+                .setContentText(content)
                 .setSmallIcon(android.R.drawable.ic_menu_mylocation)
                 .setOngoing(true)
                 .addAction(
@@ -239,9 +327,13 @@ class TrackingService : LifecycleService() {
             }
             currentSessionId = -1
             pointCount = 0
+            isPaused = false
+            lastLat = null
+            lastLng = null
+            pausedLat = null
+            pausedLng = null
 
-            setTrackingState(this@TrackingService, false)
-            broadcastStateChanged(this@TrackingService, false)
+            broadcastStateChanged(this@TrackingService, false, false)
         }
 
         stopForeground(STOP_FOREGROUND_REMOVE)

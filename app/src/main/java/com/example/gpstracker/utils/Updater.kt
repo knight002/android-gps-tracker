@@ -30,10 +30,14 @@ object Updater {
             connection = url.openConnection() as HttpURLConnection
             connection.requestMethod = "GET"
             connection.setRequestProperty("Accept", "application/vnd.github.v3+json")
+            connection.setRequestProperty("User-Agent", "GPSTracker-App")
             connection.connectTimeout = 10000
             connection.readTimeout = 10000
 
-            if (connection.responseCode != 200) return null
+            if (connection.responseCode != 200) {
+                println("Updater: API response code: ${connection.responseCode}")
+                return null
+            }
 
             val body = connection.inputStream.bufferedReader().use { it.readText() }
             val json = JSONObject(body)
@@ -46,7 +50,7 @@ object Updater {
                 val asset = assets.getJSONObject(i)
                 val name = asset.getString("name")
                 if (APK_ASSET_NAME.containsMatchIn(name)) {
-                    val downloadUrl = asset.getString("browser_download_url")
+                    val downloadUrl = asset.getString("url")
                     return UpdateInfo(tagName, downloadUrl, releaseNotes)
                 }
             }
@@ -66,16 +70,17 @@ object Updater {
             val url = URL(updateInfo.downloadUrl)
             connection = url.openConnection() as HttpURLConnection
             connection.requestMethod = "GET"
+            connection.setRequestProperty("Accept", "application/octet-stream")
+            connection.setRequestProperty("User-Agent", "GPSTracker-App")
             connection.connectTimeout = 15000
             connection.readTimeout = 30000
             connection.connect()
 
             if (connection.responseCode != 200) {
-                Toast.makeText(context, "Download failed", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Download failed: ${connection.responseCode}", Toast.LENGTH_SHORT).show()
                 return false
             }
 
-            val totalSize = connection.contentLength
             val inputStream = connection.inputStream
             val outputStream = FileOutputStream(apkFile)
 
