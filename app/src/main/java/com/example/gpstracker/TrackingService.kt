@@ -99,12 +99,12 @@ class TrackingService : LifecycleService() {
     }
 
     private var isPaused = false
-    private var lastLat: Double? = null  // For UI display
-    private var lastLng: Double? = null  // For UI display
+    private var lastLat: Double? = null  // For UI display only
+    private var lastLng: Double? = null  // For UI display only
     private var lastRecordedLat: Double? = null  // Last point saved to DB
     private var lastRecordedLng: Double? = null  // Last point saved to DB
-    private var pausedLat: Double? = null
-    private var pausedLng: Double? = null
+    private var dwellStartLat: Double? = null  // Where dwell was first detected
+    private var dwellStartLng: Double? = null  // Where dwell was first detected
     private var lastMovementTime: Long = 0L
 
     override fun onCreate() {
@@ -171,8 +171,8 @@ class TrackingService : LifecycleService() {
         isPaused = false
         lastLat = null
         lastLng = null
-        pausedLat = null
-        pausedLng = null
+        dwellStartLat = null
+        dwellStartLng = null
         lastMovementTime = System.currentTimeMillis()
         pointCount = 0
 
@@ -245,6 +245,8 @@ class TrackingService : LifecycleService() {
             lastRecordedLat = lat
             lastRecordedLng = lng
             lastMovementTime = System.currentTimeMillis()
+            dwellStartLat = null
+            dwellStartLng = null
             recordPoint(lat, lng, altitude)
             return
         }
@@ -256,28 +258,36 @@ class TrackingService : LifecycleService() {
             lastRecordedLat = lat
             lastRecordedLng = lng
             lastMovementTime = System.currentTimeMillis()
+            dwellStartLat = null
+            dwellStartLng = null
             recordPoint(lat, lng, altitude)
         } else {
             // No movement - check if we've been dwelling
-            val elapsed = System.currentTimeMillis() - lastMovementTime
-            if (elapsed > dwellTimeout) {
-                // Enter dwell state - save the dwell start location
-                isPaused = true
-                pausedLat = lastRecordedLat
-                pausedLng = lastRecordedLng
-                prefs.edit().putBoolean(KEY_IS_PAUSED, true).commit()
-                lifecycleScope.launch(Dispatchers.Main) {
-                    updateNotification()
+            if (dwellStartLat == null || dwellStartLng == null) {
+                // First time dwelling - set dwell start location and start timer
+                dwellStartLat = lastRecordedLat
+                dwellStartLng = lastRecordedLng
+                lastMovementTime = System.currentTimeMillis()
+            } else {
+                // Already dwelling - check if dwell timeout reached
+                val elapsed = System.currentTimeMillis() - lastMovementTime
+                if (elapsed > dwellTimeout) {
+                    // Enter dwell state
+                    isPaused = true
+                    prefs.edit().putBoolean(KEY_IS_PAUSED, true).commit()
+                    lifecycleScope.launch(Dispatchers.Main) {
+                        updateNotification()
+                    }
+                    broadcastStateChanged(this@TrackingService, true, true, lat, lng)
                 }
-                broadcastStateChanged(this@TrackingService, true, true, lat, lng)
             }
         }
     }
 
     private fun handlePausedLocation(lat: Double, lng: Double, altitude: Double, threshold: Double) {
-        // In dwell state - check if we've moved beyond threshold from dwell start location
-        val dist = if (pausedLat != null && pausedLng != null) {
-            DistanceCalculator.haversineDistance(pausedLat!!, pausedLng!!, lat, lng)
+        // In dwell state - check if we've moved beyond threshold from where dwell started
+        val dist = if (dwellStartLat != null && dwellStartLng != null) {
+            DistanceCalculator.haversineDistance(dwellStartLat!!, dwellStartLng!!, lat, lng)
         } else {
             0.0
         }
@@ -285,8 +295,8 @@ class TrackingService : LifecycleService() {
         if (dist > threshold) {
             // Movement detected - exit dwell state
             isPaused = false
-            pausedLat = null
-            pausedLng = null
+            dwellStartLat = null
+            dwellStartLng = null
             lastRecordedLat = lat
             lastRecordedLng = lng
             lastMovementTime = System.currentTimeMillis()
@@ -382,8 +392,8 @@ class TrackingService : LifecycleService() {
             lastLng = null
             lastRecordedLat = null
             lastRecordedLng = null
-            pausedLat = null
-            pausedLng = null
+            dwellStartLat = null
+            dwellStartLng = null
 
             prefs.edit().putBoolean(KEY_IS_PAUSED, false).commit()
             
