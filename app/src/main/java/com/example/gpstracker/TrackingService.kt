@@ -135,9 +135,11 @@ class TrackingService : LifecycleService() {
         pointCount = 0
 
         val movementThreshold = getMovementThreshold(this)
+        println("TrackingService: startTracking with threshold=$movementThreshold")
 
         locationCallback = object : LocationCallback() {
             override fun onLocationResult(result: LocationResult) {
+                println("TrackingService: onLocationResult called")
                 result.lastLocation?.let { location ->
                     handleLocation(location, movementThreshold)
                 }
@@ -145,7 +147,7 @@ class TrackingService : LifecycleService() {
         }
 
         val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 5000L)
-            .setMinUpdateIntervalMillis(4000L)
+            .setMinUpdateIntervalMillis(1000L)
             .build()
 
         lifecycleScope.launch {
@@ -183,8 +185,11 @@ class TrackingService : LifecycleService() {
         lastLat = lat
         lastLng = lng
 
+        println("TrackingService: handleLocation lat=$lat, lng=$lng, lastRecordedLat=$lastRecordedLat, lastRecordedLng=$lastRecordedLng")
+
         // If no last recorded point, record this one
         if (lastRecordedLat == null || lastRecordedLng == null) {
+            println("TrackingService: First point, recording...")
             lastRecordedLat = lat
             lastRecordedLng = lng
             recordPoint(lat, lng, alt)
@@ -194,9 +199,11 @@ class TrackingService : LifecycleService() {
 
         // Calculate distance from last recorded point
         val dist = DistanceCalculator.haversineDistance(lastRecordedLat!!, lastRecordedLng!!, lat, lng)
+        println("TrackingService: dist=$dist, threshold=$movementThreshold")
 
         // Only save to DB if movement > threshold
         if (dist > movementThreshold) {
+            println("TrackingService: Movement detected, recording point...")
             lastRecordedLat = lat
             lastRecordedLng = lng
             recordPoint(lat, lng, alt)
