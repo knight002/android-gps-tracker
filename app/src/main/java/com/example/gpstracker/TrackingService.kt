@@ -7,6 +7,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.os.Build
 import android.os.IBinder
 import android.os.Looper
@@ -38,20 +39,34 @@ class TrackingService : LifecycleService() {
     private var currentSessionId: Long = -1
     private var pointCount = 0
     private var updateJob: Job? = null
+    private lateinit var prefs: SharedPreferences
 
     companion object {
-        const val CHANNEL_ID = "gps_tracking_channel"
-        const val NOTIFICATION_ID = 1
-        const val ACTION_START = "ACTION_START"
-        const val ACTION_STOP = "ACTION_STOP"
-        const val ACTION_BROADCAST_STATE_CHANGED = "com.example.gpstracker.TRACKING_STATE_CHANGED"
-        const val EXTRA_IS_TRACKING = "is_tracking"
-        const val EXTRA_IS_PAUSED = "is_paused"
+        public const val CHANNEL_ID = "gps_tracking_channel"
+        public const val NOTIFICATION_ID = 1
+        public const val ACTION_START = "ACTION_START"
+        public const val ACTION_STOP = "ACTION_STOP"
+        public const val ACTION_BROADCAST_STATE_CHANGED = "com.example.gpstracker.TRACKING_STATE_CHANGED"
+        public const val EXTRA_IS_TRACKING = "is_tracking"
+        public const val EXTRA_IS_PAUSED = "is_paused"
         const val PREFS_NAME = "gps_tracker_prefs"
         const val KEY_IS_TRACKING = "is_tracking"
+        const val KEY_MOVEMENT_THRESHOLD = "movement_threshold"
+        const val KEY_DWELL_TIMEOUT = "dwell_timeout_minutes"
 
-        private const val DWELL_TIMEOUT_MS = 5 * 60 * 1000L
-        private const val MOVEMENT_THRESHOLD_M = 20.0
+        const val DEFAULT_DWELL_TIMEOUT_MINUTES = 1.0
+        const val DEFAULT_MOVEMENT_THRESHOLD_M = 20.0
+
+        fun getMovementThreshold(context: Context): Double {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            return prefs.getFloat(KEY_MOVEMENT_THRESHOLD, Config.DEFAULT_MOVEMENT_THRESHOLD_M.toFloat()).toDouble()
+        }
+
+        fun getDwellTimeoutMs(context: Context): Long {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val minutes = prefs.getFloat(KEY_DWELL_TIMEOUT, Config.DEFAULT_DWELL_TIMEOUT_MINUTES.toFloat()).toDouble()
+            return (minutes * 60 * 1000).toLong()
+        }
 
         fun isServiceRunning(context: Context): Boolean {
             val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
@@ -82,6 +97,7 @@ class TrackingService : LifecycleService() {
 
     override fun onCreate() {
         super.onCreate()
+        prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
         createNotificationChannel()
     }
@@ -148,10 +164,13 @@ class TrackingService : LifecycleService() {
         lastMovementTime = System.currentTimeMillis()
         pointCount = 0
 
+        val movementThreshold = getMovementThreshold(this)
+        val dwellTimeoutMs = getDwellTimeoutMs(this)
+
         locationCallback = object : LocationCallback() {
             override fun onLocationResult(result: LocationResult) {
                 result.lastLocation?.let { location ->
-                    handleLocation(location)
+                    handleLocation(location, movementThreshold, dwellTimeoutMs)
                 }
             }
         }
@@ -186,19 +205,19 @@ class TrackingService : LifecycleService() {
         }
     }
 
-    private fun handleLocation(location: android.location.Location) {
+    private fun handleLocation(location: android.location.Location, movementThreshold: Double, dwellTimeoutMs: Long) {
         val lat = location.latitude
         val lng = location.longitude
         val alt = location.altitude
 
         if (isPaused) {
-            handlePausedLocation(lat, lng, alt)
+            handlePausedLocation(lat, lng, alt, movementThreshold)
         } else {
-            handleActiveLocation(lat, lng, alt)
+            handleActiveLocation(lat, lng, alt, movementThreshold, dwellTimeoutMs)
         }
     }
 
-    private fun handleActiveLocation(lat: Double, lng: Double, altitude: Double) {
+    private fun handleActiveLocation(lat: Double, lng: Double, altitude: Double, threshold: Double, dwellTimeout: Long) {
         var shouldRecord = false
 
         if (lastLat == null || lastLng == null) {
@@ -208,14 +227,14 @@ class TrackingService : LifecycleService() {
             lastMovementTime = System.currentTimeMillis()
         } else {
             val dist = DistanceCalculator.haversineDistance(lastLat!!, lastLng!!, lat, lng)
-            if (dist > MOVEMENT_THRESHOLD_M) {
+            if (dist > threshold) {
                 shouldRecord = true
                 lastLat = lat
                 lastLng = lng
                 lastMovementTime = System.currentTimeMillis()
             } else {
                 val elapsed = System.currentTimeMillis() - lastMovementTime
-                if (elapsed > DWELL_TIMEOUT_MS) {
+                if (elapsed > dwellTimeout) {
                     isPaused = true
                     pausedLat = lastLat
                     pausedLng = lastLng
@@ -232,14 +251,14 @@ class TrackingService : LifecycleService() {
         }
     }
 
-    private fun handlePausedLocation(lat: Double, lng: Double, altitude: Double) {
+    private fun handlePausedLocation(lat: Double, lng: Double, altitude: Double, threshold: Double) {
         val dist = if (pausedLat != null && pausedLng != null) {
             DistanceCalculator.haversineDistance(pausedLat!!, pausedLng!!, lat, lng)
         } else {
             0.0
         }
 
-        if (dist > MOVEMENT_THRESHOLD_M) {
+        if (dist > threshold) {
             isPaused = false
             pausedLat = null
             pausedLng = null

@@ -82,6 +82,7 @@ class MainActivity : AppCompatActivity() {
         setupRecyclerView()
         setupTrackingButton()
         setupUpdateButton()
+        setupSettingsButton()
         observeSessions()
     }
 
@@ -169,6 +170,13 @@ class MainActivity : AppCompatActivity() {
     private fun setupUpdateButton() {
         binding.updateButton.setOnClickListener {
             checkForUpdates()
+        }
+    }
+
+    private fun setupSettingsButton() {
+        binding.settingsButton.setOnClickListener {
+            val intent = Intent(this, SettingsActivity::class.java)
+            startActivity(intent)
         }
     }
 
