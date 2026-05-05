@@ -26,21 +26,6 @@
         android:layout_height="wrap_content"
         android:inputType="numberDecimal"
         android:hint="20.0"
-        android:layout_marginBottom="16dp" />
-
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Dwell Timeout Before Pause (minutes)"
-        android:textSize="16sp"
-        android:layout_marginBottom="4dp" />
-
-    <EditText
-        android:id="@+id/dwellTimeoutEdit"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:inputType="numberDecimal"
-        android:hint="1.0"
         android:layout_marginBottom="24dp" />
 
     <Button

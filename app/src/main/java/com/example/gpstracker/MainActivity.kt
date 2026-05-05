@@ -25,7 +25,6 @@ import com.example.gpstracker.data.AppDatabase
 import com.example.gpstracker.data.Session
 import com.example.gpstracker.databinding.ActivityMainBinding
 import com.example.gpstracker.utils.DistanceCalculator
-import com.example.gpstracker.utils.Updater
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -37,21 +36,16 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var database: AppDatabase
     private lateinit var sessionAdapter: SessionAdapter
-    private var isCurrentlyPaused = false
 
     private val stateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            val isTracking = intent?.getBooleanExtra(TrackingService.EXTRA_IS_TRACKING, false) ?: false
-            val isPaused = intent?.getBooleanExtra(TrackingService.EXTRA_IS_PAUSED, false) ?: false
             val lat = intent?.getDoubleExtra(TrackingService.EXTRA_LATITUDE, 0.0) ?: 0.0
             val lng = intent?.getDoubleExtra(TrackingService.EXTRA_LONGITUDE, 0.0) ?: 0.0
             
-            updateButtonState(isTracking, isPaused)
+            updateButtonState(true)
             
-            if (isTracking && lat != 0.0 && lng != 0.0) {
+            if (lat != 0.0 && lng != 0.0) {
                 binding.locationText.text = "Location: %.4f, %.4f".format(lat, lng)
-            } else if (!isTracking) {
-                binding.locationText.text = "Location: --"
             }
         }
     }
@@ -77,7 +71,6 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, "Location permissions are required for tracking", Toast.LENGTH_LONG).show()
         }
     }
-
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -128,12 +121,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun syncTrackingState() {
         val isRunning = TrackingService.isServiceRunning(this)
-        if (isRunning) {
-            val isPaused = TrackingService.isPaused(this)
-            updateButtonState(true, isPaused)
-        } else {
-            updateButtonState(false, false)
-        }
+        updateButtonState(isRunning)
     }
 
     private fun registerStateReceiver() {
@@ -194,6 +182,48 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun toggleTracking() {
+        if (TrackingService.isServiceRunning(this)) {
+            stopTracking()
+        } else {
+            startTracking()
+        }
+    }
+
+    private fun startTracking() {
+        val intent = Intent(this, TrackingService::class.java).apply {
+            action = TrackingService.ACTION_START
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(intent)
+        } else {
+            startService(intent)
+        }
+        updateButtonState(true)
+        Toast.makeText(this, "Tracking started", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun stopTracking() {
+        val intent = Intent(this, TrackingService::class.java).apply {
+            action = TrackingService.ACTION_STOP
+        }
+        startService(intent)
+        updateButtonState(false)
+        Toast.makeText(this, "Tracking stopped", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun updateButtonState(isTracking: Boolean) {
+        if (isTracking) {
+            binding.trackButton.text = "Stop Tracking"
+            binding.trackButton.setBackgroundColor(getColor(android.R.color.holo_red_dark))
+            binding.statusText.text = "Tracking active..."
+        } else {
+            binding.trackButton.text = "Start Tracking"
+            binding.trackButton.setBackgroundColor(getColor(android.R.color.holo_green_dark))
+            binding.statusText.text = "Ready to track"
+            binding.locationText.text = "Location: --"
+        }
+    }
 
     private fun hasRequiredPermissions(): Boolean {
         val fineLocation = ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
@@ -222,60 +252,6 @@ class MainActivity : AppCompatActivity() {
             permissions.add(Manifest.permission.POST_NOTIFICATIONS)
         }
         permissionLauncher.launch(permissions.toTypedArray())
-    }
-
-    private fun toggleTracking() {
-        if (TrackingService.isServiceRunning(this)) {
-            if (isCurrentlyPaused) {
-                Toast.makeText(this, "Already paused. Stop tracking to end session.", Toast.LENGTH_SHORT).show()
-            } else {
-                stopTracking()
-            }
-        } else {
-            startTracking()
-        }
-    }
-
-    private fun startTracking() {
-        val intent = Intent(this, TrackingService::class.java).apply {
-            action = TrackingService.ACTION_START
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(intent)
-        } else {
-            startService(intent)
-        }
-        updateButtonState(true, false)
-        Toast.makeText(this, "Tracking started", Toast.LENGTH_SHORT).show()
-    }
-
-    private fun stopTracking() {
-        val intent = Intent(this, TrackingService::class.java).apply {
-            action = TrackingService.ACTION_STOP
-        }
-        startService(intent)
-        updateButtonState(false, false)
-        Toast.makeText(this, "Tracking stopped", Toast.LENGTH_SHORT).show()
-    }
-
-    private fun updateButtonState(isTracking: Boolean, isPaused: Boolean) {
-        isCurrentlyPaused = isPaused
-
-        if (isTracking) {
-            if (isPaused) {
-                binding.trackButton.text = "Resume Tracking"
-                binding.trackButton.setBackgroundColor(getColor(android.R.color.holo_orange_dark))
-                binding.statusText.text = "Tracking paused (dwelling)"
-            } else {
-                binding.trackButton.text = "Stop Tracking"
-                binding.trackButton.setBackgroundColor(getColor(android.R.color.holo_red_dark))
-                binding.statusText.text = "Tracking active..."
-            }
-        } else {
-            binding.trackButton.text = "Start Tracking"
-            binding.trackButton.setBackgroundColor(getColor(android.R.color.holo_green_dark))
-            binding.statusText.text = "Ready to track"
-        }
     }
 
     private fun observeSessions() {
