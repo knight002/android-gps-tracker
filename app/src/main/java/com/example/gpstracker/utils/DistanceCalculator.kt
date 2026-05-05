@@ -8,6 +8,7 @@ import kotlin.math.sqrt
 
 object DistanceCalculator {
     private const val EARTH_RADIUS_KM = 6371.0
+    private const val EARTH_RADIUS_M = EARTH_RADIUS_KM * 1000
 
     fun haversineDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
         val dLat = Math.toRadians(lat2 - lat1)
@@ -16,7 +17,7 @@ object DistanceCalculator {
                 cos(Math.toRadians(lat1)) * cos(Math.toRadians(lat2)) *
                 sin(dLon / 2) * sin(dLon / 2)
         val c = 2 * atan2(sqrt(a), sqrt(1 - a))
-        return EARTH_RADIUS_KM * c
+        return EARTH_RADIUS_M * c  // Return meters
     }
 
     fun calculateTotalDistance(points: List<LocationPoint>): Double {
@@ -31,11 +32,11 @@ object DistanceCalculator {
         return totalDistance
     }
 
-    fun formatDistance(distanceKm: Double): String {
-        return if (distanceKm < 1.0) {
-            "${(distanceKm * 1000).toInt()} m"
+    fun formatDistance(distanceMeters: Double): String {
+        return if (distanceMeters < 1000) {
+            "${distanceMeters.toInt()} m"
         } else {
-            String.format("%.2f km", distanceKm)
+            String.format("%.2f km", distanceMeters / 1000)
         }
     }
 
