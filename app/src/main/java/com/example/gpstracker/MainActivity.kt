@@ -66,11 +66,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private val installPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) {
-        checkForUpdates()
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -81,7 +76,7 @@ class MainActivity : AppCompatActivity() {
 
         setupRecyclerView()
         setupTrackingButton()
-        setupUpdateButton()
+        setupAboutButton()
         setupSettingsButton()
         observeSessions()
     }
@@ -168,11 +163,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun setupUpdateButton() {
-        binding.updateButton.setOnClickListener {
-            checkForUpdates()
-        }
-    }
 
     private fun setupSettingsButton() {
         binding.settingsButton.setOnClickListener {
@@ -181,70 +171,13 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun checkForUpdates() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !packageManager.canRequestPackageInstalls()) {
-            AlertDialog.Builder(this)
-                .setTitle("Permission Required")
-                .setMessage("This app needs permission to install updates. Please enable 'Install unknown apps' for GPS Tracker.")
-                .setPositiveButton("Open Settings") { _, _ ->
-                    val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES)
-                    intent.data = Uri.parse("package:$packageName")
-                    installPermissionLauncher.launch(intent)
-                }
-                .setNegativeButton("Cancel", null)
-                .show()
-            return
-        }
-
-        binding.updateButton.isEnabled = false
-        binding.updateButton.text = "Checking..."
-
-        lifecycleScope.launch {
-            val updateInfo = Updater.checkForUpdates()
-
-            withContext(Dispatchers.Main) {
-                binding.updateButton.isEnabled = true
-                binding.updateButton.text = "Check for Updates"
-
-                if (updateInfo == null) {
-                    Toast.makeText(this@MainActivity, "No updates found or failed to check", Toast.LENGTH_LONG).show()
-                    return@withContext
-                }
-
-                val currentVersion = try {
-                    packageManager.getPackageInfo(packageName, 0).versionName
-                } catch (_: Exception) { null }
-
-                val info = updateInfo
-                val isNewer = currentVersion == null || info.versionName != currentVersion
-
-                if (!isNewer) {
-                    Toast.makeText(this@MainActivity, "Already on latest version: $currentVersion", Toast.LENGTH_LONG).show()
-                    return@withContext
-                }
-
-                AlertDialog.Builder(this@MainActivity)
-                    .setTitle("Update Available: ${info.versionName}")
-                    .setMessage("Current: $currentVersion\n\n${info.releaseNotes}")
-                    .setPositiveButton("Download & Install") { _, _ ->
-                        binding.updateButton.isEnabled = false
-                        binding.updateButton.text = "Downloading..."
-                        lifecycleScope.launch {
-                            val success = Updater.downloadAndInstall(this@MainActivity, info)
-                            withContext(Dispatchers.Main) {
-                                binding.updateButton.isEnabled = true
-                                binding.updateButton.text = "Check for Updates"
-                                if (success) {
-                                    Toast.makeText(this@MainActivity, "Installing update...", Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                        }
-                    }
-                    .setNegativeButton("Cancel", null)
-                    .show()
-            }
+    private fun setupAboutButton() {
+        binding.aboutButton.setOnClickListener {
+            val intent = Intent(this, AboutActivity::class.java)
+            startActivity(intent)
         }
     }
+
 
     private fun hasRequiredPermissions(): Boolean {
         val fineLocation = ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
