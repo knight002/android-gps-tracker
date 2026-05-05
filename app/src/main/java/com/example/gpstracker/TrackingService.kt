@@ -226,15 +226,16 @@ class TrackingService : LifecycleService() {
         val lng = location.longitude
         val alt = location.altitude
 
+        // Always update UI display location
+        lastLat = lat
+        lastLng = lng
+
         if (isPaused) {
             handlePausedLocation(lat, lng, alt, movementThreshold)
         } else {
             handleActiveLocation(lat, lng, alt, movementThreshold, dwellTimeoutMs)
         }
 
-        // Always update UI display location (separate from last recorded point)
-        lastLat = lat
-        lastLng = lng
         broadcastStateChanged(this, true, isPaused, lat, lng)
     }
 
@@ -251,16 +252,16 @@ class TrackingService : LifecycleService() {
         val dist = DistanceCalculator.haversineDistance(lastRecordedLat!!, lastRecordedLng!!, lat, lng)
 
         if (dist > threshold) {
-            // Movement detected - reset dwell timer and record point
-            lastMovementTime = System.currentTimeMillis()
+            // Movement detected - record point and reset dwell timer
             lastRecordedLat = lat
             lastRecordedLng = lng
+            lastMovementTime = System.currentTimeMillis()
             recordPoint(lat, lng, altitude)
         } else {
             // No movement - check if we've been dwelling
             val elapsed = System.currentTimeMillis() - lastMovementTime
             if (elapsed > dwellTimeout) {
-                // Enter dwell state
+                // Enter dwell state - save the dwell start location
                 isPaused = true
                 pausedLat = lastRecordedLat
                 pausedLng = lastRecordedLng
