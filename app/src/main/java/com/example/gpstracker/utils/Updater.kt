@@ -7,6 +7,8 @@ import android.net.Uri
 import android.os.Build
 import android.widget.Toast
 import androidx.core.content.FileProvider
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
@@ -24,103 +26,115 @@ object Updater {
     )
 
     suspend fun checkForUpdates(): UpdateInfo? {
-        var connection: HttpURLConnection? = null
-        try {
-            val url = URL(RELEASES_URL)
-            connection = url.openConnection() as HttpURLConnection
-            connection.requestMethod = "GET"
-            connection.setRequestProperty("Accept", "application/vnd.github.v3+json")
-            connection.setRequestProperty("User-Agent", "GPSTracker-App")
-            connection.connectTimeout = 15000
-            connection.readTimeout = 15000
-            connection.instanceFollowRedirects = true
+        return withContext(Dispatchers.IO) {
+            var connection: HttpURLConnection? = null
+            try {
+                val url = URL(RELEASES_URL)
+                connection = url.openConnection() as HttpURLConnection
+                connection.requestMethod = "GET"
+                connection.setRequestProperty("Accept", "application/vnd.github.v3+json")
+                connection.setRequestProperty("User-Agent", "GPSTracker-App")
+                connection.connectTimeout = 15000
+                connection.readTimeout = 15000
+                connection.instanceFollowRedirects = true
 
-            println("Updater: Checking for updates...")
-            println("Updater: Response code: ${connection.responseCode}")
+                println("Updater: Checking for updates...")
+                println("Updater: Response code: ${connection.responseCode}")
 
-            if (connection.responseCode != 200) {
-                val errorBody = try { connection.errorStream?.bufferedReader()?.readText() } catch (_: Exception) { null }
-                println("Updater: API error response: $errorBody")
-                return null
-            }
-
-            val body = connection.inputStream.bufferedReader().use { it.readText() }
-            println("Updater: Response body length: ${body.length}")
-            
-            val json = JSONObject(body)
-
-            val tagName = json.getString("tag_name")
-            println("Updater: Latest tag: $tagName")
-            
-            val releaseNotes = json.optString("body", "No release notes.")
-            val assets = json.getJSONArray("assets")
-            
-            println("Updater: Found ${assets.length()} assets")
-
-            for (i in 0 until assets.length()) {
-                val asset = assets.getJSONObject(i)
-                val name = asset.getString("name")
-                println("Updater: Checking asset: $name")
-                if (APK_ASSET_NAME.containsMatchIn(name)) {
-                    val downloadUrl = asset.getString("browser_download_url")
-                    println("Updater: Found APK asset with download URL: $downloadUrl")
-                    return UpdateInfo(tagName, downloadUrl, releaseNotes)
+                if (connection.responseCode != 200) {
+                    val errorBody = try { connection.errorStream?.bufferedReader()?.readText() } catch (_: Exception) { null }
+                    println("Updater: API error response: $errorBody")
+                    return@withContext null
                 }
+
+                val body = connection.inputStream.bufferedReader().use { it.readText() }
+                println("Updater: Response body length: ${body.length}")
+                
+                val json = JSONObject(body)
+
+                val tagName = json.getString("tag_name")
+                println("Updater: Latest tag: $tagName")
+                
+                val releaseNotes = json.optString("body", "No release notes.")
+                val assets = json.getJSONArray("assets")
+                
+                println("Updater: Found ${assets.length()} assets")
+
+                for (i in 0 until assets.length()) {
+                    val asset = assets.getJSONObject(i)
+                    val name = asset.getString("name")
+                    println("Updater: Checking asset: $name")
+                    if (APK_ASSET_NAME.containsMatchIn(name)) {
+                        val downloadUrl = asset.getString("browser_download_url")
+                        println("Updater: Found APK asset with download URL: $downloadUrl")
+                        return@withContext UpdateInfo(tagName, downloadUrl, releaseNotes)
+                    }
+                }
+                println("Updater: No matching APK asset found")
+                return@withContext null
+            } catch (e: Exception) {
+                println("Updater: Exception in checkForUpdates: ${e.message}")
+                e.printStackTrace()
+                return@withContext null
+            } finally {
+                connection?.disconnect()
             }
-            println("Updater: No matching APK asset found")
-            return null
-        } catch (e: Exception) {
-            println("Updater: Exception in checkForUpdates: ${e.message}")
-            e.printStackTrace()
-            return null
-        } finally {
-            connection?.disconnect()
         }
     }
 
     suspend fun downloadAndInstall(context: Activity, updateInfo: UpdateInfo): Boolean {
-        var connection: HttpURLConnection? = null
-        val apkFile = File(context.getExternalFilesDir(null), "update.apk")
-        try {
-            val url = URL(updateInfo.downloadUrl)
-            connection = url.openConnection() as HttpURLConnection
-            connection.requestMethod = "GET"
-            connection.setRequestProperty("Accept", "application/octet-stream")
-            connection.setRequestProperty("User-Agent", "GPSTracker-App")
-            connection.connectTimeout = 15000
-            connection.readTimeout = 30000
-            connection.connect()
+        return withContext(Dispatchers.IO) {
+            var connection: HttpURLConnection? = null
+            val apkFile = File(context.getExternalFilesDir(null), "update.apk")
+            try {
+                val url = URL(updateInfo.downloadUrl)
+                connection = url.openConnection() as HttpURLConnection
+                connection.requestMethod = "GET"
+                connection.setRequestProperty("Accept", "application/octet-stream")
+                connection.setRequestProperty("User-Agent", "GPSTracker-App")
+                connection.connectTimeout = 15000
+                connection.readTimeout = 30000
+                connection.instanceFollowRedirects = true
+                connection.connect()
 
-            if (connection.responseCode != 200) {
-                Toast.makeText(context, "Download failed: ${connection.responseCode}", Toast.LENGTH_SHORT).show()
-                return false
+                if (connection.responseCode != 200) {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, "Download failed: ${connection.responseCode}", Toast.LENGTH_SHORT).show()
+                    }
+                    return@withContext false
+                }
+
+                val inputStream = connection.inputStream
+                val outputStream = FileOutputStream(apkFile)
+
+                val buffer = ByteArray(8192)
+                var bytesRead: Int
+                var totalBytesRead = 0L
+
+                while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                    outputStream.write(buffer, 0, bytesRead)
+                    totalBytesRead += bytesRead
+                }
+
+                outputStream.flush()
+                outputStream.close()
+                inputStream.close()
+
+                withContext(Dispatchers.Main) {
+                    installApk(context, apkFile)
+                }
+                return@withContext true
+            } catch (e: Exception) {
+                println("Updater: Exception in downloadAndInstall: ${e.message}")
+                e.printStackTrace()
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+                apkFile.delete()
+                return@withContext false
+            } finally {
+                connection?.disconnect()
             }
-
-            val inputStream = connection.inputStream
-            val outputStream = FileOutputStream(apkFile)
-
-            val buffer = ByteArray(8192)
-            var bytesRead: Int
-            var totalBytesRead = 0L
-
-            while (inputStream.read(buffer).also { bytesRead = it } != -1) {
-                outputStream.write(buffer, 0, bytesRead)
-                totalBytesRead += bytesRead
-            }
-
-            outputStream.flush()
-            outputStream.close()
-            inputStream.close()
-
-            installApk(context, apkFile)
-            return true
-        } catch (e: Exception) {
-            e.printStackTrace()
-            Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_LONG).show()
-            apkFile.delete()
-            return false
-        } finally {
-            connection?.disconnect()
         }
     }
 
