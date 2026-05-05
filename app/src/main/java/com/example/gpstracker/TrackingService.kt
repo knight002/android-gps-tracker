@@ -49,6 +49,8 @@ class TrackingService : LifecycleService() {
         const val ACTION_BROADCAST_STATE_CHANGED = "com.example.gpstracker.TRACKING_STATE_CHANGED"
         const val EXTRA_IS_TRACKING = "is_tracking"
         const val EXTRA_IS_PAUSED = "is_paused"
+        const val EXTRA_LATITUDE = "latitude"
+        const val EXTRA_LONGITUDE = "longitude"
         const val PREFS_NAME = "gps_tracker_prefs"
         const val KEY_IS_TRACKING = "is_tracking"
         const val KEY_IS_PAUSED = "is_paused"
@@ -84,10 +86,12 @@ class TrackingService : LifecycleService() {
             return prefs.getBoolean(KEY_IS_PAUSED, false)
         }
 
-        fun broadcastStateChanged(context: Context, isTracking: Boolean, isPaused: Boolean) {
+        fun broadcastStateChanged(context: Context, isTracking: Boolean, isPaused: Boolean, lat: Double = 0.0, lng: Double = 0.0) {
             val intent = Intent(ACTION_BROADCAST_STATE_CHANGED).apply {
                 putExtra(EXTRA_IS_TRACKING, isTracking)
                 putExtra(EXTRA_IS_PAUSED, isPaused)
+                putExtra(EXTRA_LATITUDE, lat)
+                putExtra(EXTRA_LONGITUDE, lng)
                 setPackage(context.packageName)
             }
             LocalBroadcastManager.getInstance(context).sendBroadcast(intent)
@@ -195,8 +199,10 @@ class TrackingService : LifecycleService() {
                 totalPoints = 0
             )
             currentSessionId = db.sessionDao().insertSession(session)
-
-            broadcastStateChanged(this@TrackingService, true, false)
+            
+            lastLat = null
+            lastLng = null
+            broadcastStateChanged(this@TrackingService, true, false, 0.0, 0.0)
 
             updateJob = launch {
                 while (isActive) {
@@ -251,6 +257,7 @@ class TrackingService : LifecycleService() {
                         updateNotification()
                     }
                     lastMovementTime = System.currentTimeMillis()
+                    broadcastStateChanged(this@TrackingService, true, true, lastLat ?: 0.0, lastLng ?: 0.0)
                 }
             }
         }
@@ -276,10 +283,10 @@ class TrackingService : LifecycleService() {
             lastMovementTime = System.currentTimeMillis()
 
             prefs.edit().putBoolean(KEY_IS_PAUSED, false).commit()
-
+            
             recordPoint(lat, lng, altitude)
-
-            broadcastStateChanged(this, true, false)
+            
+            broadcastStateChanged(this, true, false, lat, lng)
         }
     }
 
@@ -364,8 +371,8 @@ class TrackingService : LifecycleService() {
             pausedLng = null
 
             prefs.edit().putBoolean(KEY_IS_PAUSED, false).commit()
-
-            broadcastStateChanged(this@TrackingService, false, false)
+            
+            broadcastStateChanged(this@TrackingService, false, false, 0.0, 0.0)
         }
 
         stopForeground(STOP_FOREGROUND_REMOVE)

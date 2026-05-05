@@ -26,21 +26,15 @@
         android:text="Start Tracking"
         android:textSize="20sp" />
 
-    <Button
-        android:id="@+id/aboutButton"
+    <TextView
+        android:id="@+id/locationText"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginBottom="8dp"
-        android:text="About"
-        android:textSize="14sp" />
-
-    <Button
-        android:id="@+id/settingsButton"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginBottom="16dp"
-        android:text="Settings"
-        android:textSize="14sp" />
+        android:gravity="center"
+        android:padding="8dp"
+        android:text="Location: --"
+        android:textSize="14sp"
+        android:textColor="#666666" />
 
     <View
         android:layout_width="match_parent"

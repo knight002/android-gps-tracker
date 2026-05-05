@@ -10,6 +10,8 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.view.Menu
+import android.view.MenuItem
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
@@ -28,6 +30,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.roundToInt
 
 class MainActivity : AppCompatActivity() {
 
@@ -40,7 +43,16 @@ class MainActivity : AppCompatActivity() {
         override fun onReceive(context: Context?, intent: Intent?) {
             val isTracking = intent?.getBooleanExtra(TrackingService.EXTRA_IS_TRACKING, false) ?: false
             val isPaused = intent?.getBooleanExtra(TrackingService.EXTRA_IS_PAUSED, false) ?: false
+            val lat = intent?.getDoubleExtra(TrackingService.EXTRA_LATITUDE, 0.0) ?: 0.0
+            val lng = intent?.getDoubleExtra(TrackingService.EXTRA_LONGITUDE, 0.0) ?: 0.0
+            
             updateButtonState(isTracking, isPaused)
+            
+            if (isTracking && lat != 0.0 && lng != 0.0) {
+                binding.locationText.text = "Location: %.4f, %.4f".format(lat, lng)
+            } else if (!isTracking) {
+                binding.locationText.text = "Location: --"
+            }
         }
     }
 
@@ -76,9 +88,28 @@ class MainActivity : AppCompatActivity() {
 
         setupRecyclerView()
         setupTrackingButton()
-        setupAboutButton()
-        setupSettingsButton()
         observeSessions()
+    }
+
+    override fun onCreateOptionsMenu(menu: Menu): Boolean {
+        menuInflater.inflate(R.menu.main_menu, menu)
+        return true
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        when (item.itemId) {
+            R.id.action_about -> {
+                val intent = Intent(this, AboutActivity::class.java)
+                startActivity(intent)
+                return true
+            }
+            R.id.action_settings -> {
+                val intent = Intent(this, SettingsActivity::class.java)
+                startActivity(intent)
+                return true
+            }
+        }
+        return super.onOptionsItemSelected(item)
     }
 
     override fun onResume() {
@@ -160,21 +191,6 @@ class MainActivity : AppCompatActivity() {
             } else {
                 toggleTracking()
             }
-        }
-    }
-
-
-    private fun setupSettingsButton() {
-        binding.settingsButton.setOnClickListener {
-            val intent = Intent(this, SettingsActivity::class.java)
-            startActivity(intent)
-        }
-    }
-
-    private fun setupAboutButton() {
-        binding.aboutButton.setOnClickListener {
-            val intent = Intent(this, AboutActivity::class.java)
-            startActivity(intent)
         }
     }
 
