@@ -42,15 +42,16 @@ class TrackingService : LifecycleService() {
     private lateinit var prefs: SharedPreferences
 
     companion object {
-        public const val CHANNEL_ID = "gps_tracking_channel"
-        public const val NOTIFICATION_ID = 1
-        public const val ACTION_START = "ACTION_START"
-        public const val ACTION_STOP = "ACTION_STOP"
-        public const val ACTION_BROADCAST_STATE_CHANGED = "com.example.gpstracker.TRACKING_STATE_CHANGED"
-        public const val EXTRA_IS_TRACKING = "is_tracking"
-        public const val EXTRA_IS_PAUSED = "is_paused"
+        const val CHANNEL_ID = "gps_tracking_channel"
+        const val NOTIFICATION_ID = 1
+        const val ACTION_START = "ACTION_START"
+        const val ACTION_STOP = "ACTION_STOP"
+        const val ACTION_BROADCAST_STATE_CHANGED = "com.example.gpstracker.TRACKING_STATE_CHANGED"
+        const val EXTRA_IS_TRACKING = "is_tracking"
+        const val EXTRA_IS_PAUSED = "is_paused"
         const val PREFS_NAME = "gps_tracker_prefs"
         const val KEY_IS_TRACKING = "is_tracking"
+        const val KEY_IS_PAUSED = "is_paused"
         const val KEY_MOVEMENT_THRESHOLD = "movement_threshold"
         const val KEY_DWELL_TIMEOUT = "dwell_timeout_minutes"
 
@@ -59,12 +60,12 @@ class TrackingService : LifecycleService() {
 
         fun getMovementThreshold(context: Context): Double {
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            return prefs.getFloat(KEY_MOVEMENT_THRESHOLD, Config.DEFAULT_MOVEMENT_THRESHOLD_M.toFloat()).toDouble()
+            return prefs.getFloat(KEY_MOVEMENT_THRESHOLD, DEFAULT_MOVEMENT_THRESHOLD_M.toFloat()).toDouble()
         }
 
         fun getDwellTimeoutMs(context: Context): Long {
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            val minutes = prefs.getFloat(KEY_DWELL_TIMEOUT, Config.DEFAULT_DWELL_TIMEOUT_MINUTES.toFloat()).toDouble()
+            val minutes = prefs.getFloat(KEY_DWELL_TIMEOUT, DEFAULT_DWELL_TIMEOUT_MINUTES.toFloat()).toDouble()
             return (minutes * 60 * 1000).toLong()
         }
 
@@ -76,6 +77,11 @@ class TrackingService : LifecycleService() {
                 }
             }
             return false
+        }
+
+        fun isPaused(context: Context): Boolean {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            return prefs.getBoolean(KEY_IS_PAUSED, false)
         }
 
         fun broadcastStateChanged(context: Context, isTracking: Boolean, isPaused: Boolean) {
@@ -167,6 +173,8 @@ class TrackingService : LifecycleService() {
         val movementThreshold = getMovementThreshold(this)
         val dwellTimeoutMs = getDwellTimeoutMs(this)
 
+        prefs.edit().putBoolean(KEY_IS_PAUSED, false).commit()
+
         locationCallback = object : LocationCallback() {
             override fun onLocationResult(result: LocationResult) {
                 result.lastLocation?.let { location ->
@@ -238,6 +246,7 @@ class TrackingService : LifecycleService() {
                     isPaused = true
                     pausedLat = lastLat
                     pausedLng = lastLng
+                    prefs.edit().putBoolean(KEY_IS_PAUSED, true).commit()
                     lifecycleScope.launch(Dispatchers.Main) {
                         updateNotification()
                     }
@@ -265,6 +274,8 @@ class TrackingService : LifecycleService() {
             lastLat = lat
             lastLng = lng
             lastMovementTime = System.currentTimeMillis()
+
+            prefs.edit().putBoolean(KEY_IS_PAUSED, false).commit()
 
             recordPoint(lat, lng, altitude)
 
@@ -351,6 +362,8 @@ class TrackingService : LifecycleService() {
             lastLng = null
             pausedLat = null
             pausedLng = null
+
+            prefs.edit().putBoolean(KEY_IS_PAUSED, false).commit()
 
             broadcastStateChanged(this@TrackingService, false, false)
         }

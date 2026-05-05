@@ -103,7 +103,8 @@ class MainActivity : AppCompatActivity() {
     private fun syncTrackingState() {
         val isRunning = TrackingService.isServiceRunning(this)
         if (isRunning) {
-            updateButtonState(true, isCurrentlyPaused)
+            val isPaused = TrackingService.isPaused(this)
+            updateButtonState(true, isPaused)
         } else {
             updateButtonState(false, false)
         }
