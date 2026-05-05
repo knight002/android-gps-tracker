@@ -229,6 +229,11 @@ class TrackingService : LifecycleService() {
         } else {
             handleActiveLocation(lat, lng, alt, movementThreshold, dwellTimeoutMs)
         }
+        
+        // Always update last known location for UI display
+        lastLat = lat
+        lastLng = lng
+        broadcastStateChanged(this, true, isPaused, lat, lng)
     }
 
     private fun handleActiveLocation(lat: Double, lng: Double, altitude: Double, threshold: Double, dwellTimeout: Long) {
@@ -236,15 +241,11 @@ class TrackingService : LifecycleService() {
 
         if (lastLat == null || lastLng == null) {
             shouldRecord = true
-            lastLat = lat
-            lastLng = lng
             lastMovementTime = System.currentTimeMillis()
         } else {
             val dist = DistanceCalculator.haversineDistance(lastLat!!, lastLng!!, lat, lng)
             if (dist > threshold) {
                 shouldRecord = true
-                lastLat = lat
-                lastLng = lng
                 lastMovementTime = System.currentTimeMillis()
             } else {
                 val elapsed = System.currentTimeMillis() - lastMovementTime
@@ -256,18 +257,20 @@ class TrackingService : LifecycleService() {
                     lifecycleScope.launch(Dispatchers.Main) {
                         updateNotification()
                     }
-                    lastMovementTime = System.currentTimeMillis()
-                    broadcastStateChanged(this@TrackingService, true, true, lastLat ?: 0.0, lastLng ?: 0.0)
+                    broadcastStateChanged(this@TrackingService, true, true, lat, lng)
                 }
             }
         }
 
         if (shouldRecord) {
+            lastLat = lat
+            lastLng = lng
             recordPoint(lat, lng, altitude)
         }
     }
 
     private fun handlePausedLocation(lat: Double, lng: Double, altitude: Double, threshold: Double) {
+        // Check if we've moved beyond threshold from where we paused
         val dist = if (pausedLat != null && pausedLng != null) {
             DistanceCalculator.haversineDistance(pausedLat!!, pausedLng!!, lat, lng)
         } else {
@@ -275,6 +278,7 @@ class TrackingService : LifecycleService() {
         }
 
         if (dist > threshold) {
+            // Resume tracking
             isPaused = false
             pausedLat = null
             pausedLng = null
@@ -286,8 +290,12 @@ class TrackingService : LifecycleService() {
             
             recordPoint(lat, lng, altitude)
             
+            lifecycleScope.launch(Dispatchers.Main) {
+                updateNotification()
+            }
             broadcastStateChanged(this, true, false, lat, lng)
         }
+        // If still paused, don't record the point to DB
     }
 
     private fun recordPoint(lat: Double, lng: Double, altitude: Double) {
