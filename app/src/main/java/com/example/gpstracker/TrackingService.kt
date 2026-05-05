@@ -224,53 +224,56 @@ class TrackingService : LifecycleService() {
         val lng = location.longitude
         val alt = location.altitude
 
+        // Always update last known location for UI display
+        lastLat = lat
+        lastLng = lng
+
         if (isPaused) {
             handlePausedLocation(lat, lng, alt, movementThreshold)
         } else {
             handleActiveLocation(lat, lng, alt, movementThreshold, dwellTimeoutMs)
         }
-        
-        // Always update last known location for UI display
-        lastLat = lat
-        lastLng = lng
+
         broadcastStateChanged(this, true, isPaused, lat, lng)
     }
 
     private fun handleActiveLocation(lat: Double, lng: Double, altitude: Double, threshold: Double, dwellTimeout: Long) {
-        var shouldRecord = false
-
+        // If no last recorded point, record this one
         if (lastLat == null || lastLng == null) {
-            shouldRecord = true
+            lastLat = lat
+            lastLng = lng
             lastMovementTime = System.currentTimeMillis()
-        } else {
-            val dist = DistanceCalculator.haversineDistance(lastLat!!, lastLng!!, lat, lng)
-            if (dist > threshold) {
-                shouldRecord = true
-                lastMovementTime = System.currentTimeMillis()
-            } else {
-                val elapsed = System.currentTimeMillis() - lastMovementTime
-                if (elapsed > dwellTimeout) {
-                    isPaused = true
-                    pausedLat = lastLat
-                    pausedLng = lastLng
-                    prefs.edit().putBoolean(KEY_IS_PAUSED, true).commit()
-                    lifecycleScope.launch(Dispatchers.Main) {
-                        updateNotification()
-                    }
-                    broadcastStateChanged(this@TrackingService, true, true, lat, lng)
-                }
-            }
+            recordPoint(lat, lng, altitude)
+            return
         }
 
-        if (shouldRecord) {
+        val dist = DistanceCalculator.haversineDistance(lastLat!!, lastLng!!, lat, lng)
+
+        if (dist > threshold) {
+            // Movement detected - reset dwell timer and record point
+            lastMovementTime = System.currentTimeMillis()
             lastLat = lat
             lastLng = lng
             recordPoint(lat, lng, altitude)
+        } else {
+            // No movement - check if we've been dwelling
+            val elapsed = System.currentTimeMillis() - lastMovementTime
+            if (elapsed > dwellTimeout) {
+                // Enter dwell state
+                isPaused = true
+                pausedLat = lastLat
+                pausedLng = lastLng
+                prefs.edit().putBoolean(KEY_IS_PAUSED, true).commit()
+                lifecycleScope.launch(Dispatchers.Main) {
+                    updateNotification()
+                }
+                broadcastStateChanged(this@TrackingService, true, true, lat, lng)
+            }
         }
     }
 
     private fun handlePausedLocation(lat: Double, lng: Double, altitude: Double, threshold: Double) {
-        // Check if we've moved beyond threshold from where we paused
+        // In dwell state - check if we've moved beyond threshold from dwell start location
         val dist = if (pausedLat != null && pausedLng != null) {
             DistanceCalculator.haversineDistance(pausedLat!!, pausedLng!!, lat, lng)
         } else {
@@ -278,7 +281,7 @@ class TrackingService : LifecycleService() {
         }
 
         if (dist > threshold) {
-            // Resume tracking
+            // Movement detected - exit dwell state
             isPaused = false
             pausedLat = null
             pausedLng = null
@@ -287,15 +290,15 @@ class TrackingService : LifecycleService() {
             lastMovementTime = System.currentTimeMillis()
 
             prefs.edit().putBoolean(KEY_IS_PAUSED, false).commit()
-            
+
             recordPoint(lat, lng, altitude)
-            
+
             lifecycleScope.launch(Dispatchers.Main) {
                 updateNotification()
             }
             broadcastStateChanged(this, true, false, lat, lng)
         }
-        // If still paused, don't record the point to DB
+        // If still dwelled, don't record the point to DB
     }
 
     private fun recordPoint(lat: Double, lng: Double, altitude: Double) {
