@@ -21,11 +21,4 @@
         android:textSize="18sp"
         android:layout_marginBottom="32dp" />
 
-    <Button
-        android:id="@+id/checkUpdatesButton"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Check for Updates"
-        android:padding="16dp" />
-
 </LinearLayout>
