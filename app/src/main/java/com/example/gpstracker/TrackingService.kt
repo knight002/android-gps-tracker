@@ -31,8 +31,23 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import java.io.File
+import java.io.FileWriter
+import java.text.SimpleDateFormat
+import java.util.Date
 
 class TrackingService : LifecycleService() {
+
+    private lateinit var logFile: File
+
+    private fun log(msg: String) {
+        try {
+            val timestamp = SimpleDateFormat("HH:mm:ss.SSS").format(Date())
+            val logMsg = "[$timestamp] $msg\n"
+            FileWriter(logFile, true).use { it.write(logMsg) }
+            println("TrackingService: $msg")
+        } catch (_: Exception) {}
+    }
 
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     private lateinit var locationCallback: LocationCallback
@@ -90,6 +105,8 @@ class TrackingService : LifecycleService() {
         prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
         createNotificationChannel()
+        logFile = File(getExternalFilesDir(null), "tracking_log.txt")
+        log("Service created")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -135,11 +152,11 @@ class TrackingService : LifecycleService() {
         pointCount = 0
 
         val movementThreshold = getMovementThreshold(this)
-        println("TrackingService: startTracking with threshold=$movementThreshold")
+        log("startTracking with threshold=$movementThreshold")
 
         locationCallback = object : LocationCallback() {
             override fun onLocationResult(result: LocationResult) {
-                println("TrackingService: onLocationResult called")
+                log("onLocationResult called")
                 result.lastLocation?.let { location ->
                     handleLocation(location, movementThreshold)
                 }
@@ -185,11 +202,11 @@ class TrackingService : LifecycleService() {
         lastLat = lat
         lastLng = lng
 
-        println("TrackingService: handleLocation lat=$lat, lng=$lng, lastRecordedLat=$lastRecordedLat, lastRecordedLng=$lastRecordedLng")
+        log("handleLocation lat=$lat, lng=$lng, lastRecordedLat=$lastRecordedLat, lastRecordedLng=$lastRecordedLng")
 
         // If no last recorded point, record this one
         if (lastRecordedLat == null || lastRecordedLng == null) {
-            println("TrackingService: First point, recording...")
+            log("First point, recording...")
             lastRecordedLat = lat
             lastRecordedLng = lng
             recordPoint(lat, lng, alt)
@@ -199,11 +216,11 @@ class TrackingService : LifecycleService() {
 
         // Calculate distance from last recorded point
         val dist = DistanceCalculator.haversineDistance(lastRecordedLat!!, lastRecordedLng!!, lat, lng)
-        println("TrackingService: dist=$dist, threshold=$movementThreshold")
+        log("dist=$dist, threshold=$movementThreshold")
 
         // Only save to DB if movement > threshold
         if (dist > movementThreshold) {
-            println("TrackingService: Movement detected, recording point...")
+            log("Movement detected, recording point...")
             lastRecordedLat = lat
             lastRecordedLng = lng
             recordPoint(lat, lng, alt)
@@ -224,6 +241,7 @@ class TrackingService : LifecycleService() {
             )
             db.locationPointDao().insertPoint(point)
             pointCount++
+            log("Point recorded: lat=$lat, lng=$lng, total=$pointCount")
             updateNotification()
         }
     }
@@ -279,6 +297,7 @@ class TrackingService : LifecycleService() {
     }
 
     private fun stopTracking() {
+        log("stopTracking called")
         fusedLocationClient.removeLocationUpdates(locationCallback)
         updateJob?.cancel()
 
@@ -304,6 +323,7 @@ class TrackingService : LifecycleService() {
             lastRecordedLng = null
         }
 
+        log("Tracking stopped. Log saved to ${logFile.absolutePath}")
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
