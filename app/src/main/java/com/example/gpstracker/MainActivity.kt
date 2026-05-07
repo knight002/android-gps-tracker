@@ -30,6 +30,8 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
+import org.osmdroid.config.Configuration
+import java.io.File
 
 class MainActivity : AppCompatActivity() {
 
@@ -74,6 +76,9 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        initOsMdroidConfig()
+
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
@@ -82,6 +87,20 @@ class MainActivity : AppCompatActivity() {
         setupRecyclerView()
         setupTrackingButton()
         observeSessions()
+    }
+
+    private fun initOsMdroidConfig() {
+        val basePath = File(getExternalFilesDir(null) ?: filesDir, "osmdroid")
+        if (!basePath.exists()) {
+            basePath.mkdirs()
+        }
+        val cacheDir = File(basePath, "cache")
+        if (!cacheDir.exists()) {
+            cacheDir.mkdirs()
+        }
+        Configuration.getInstance().userAgentValue = packageName
+        Configuration.getInstance().osmdroidBasePath = basePath
+        Configuration.getInstance().osmdroidTileCache = cacheDir
     }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
@@ -298,8 +317,11 @@ class SessionAdapter(
         RecyclerView.ViewHolder(itemView) {
 
         private val db = AppDatabase.getDatabase(itemView.context)
+        private var loadJob: kotlinx.coroutines.Job? = null
 
         fun bind(session: Session) {
+            loadJob?.cancel()
+
             val dateText = java.text.SimpleDateFormat("MMM dd, yyyy HH:mm", java.util.Locale.getDefault())
                 .format(java.util.Date(session.startTime))
 
@@ -315,7 +337,7 @@ class SessionAdapter(
 
             val distanceView = itemView.findViewById<android.widget.TextView>(R.id.sessionDistance)
 
-            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            loadJob = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
                 val points = db.locationPointDao().getPointsBySessionSync(session.id)
                 val distance = DistanceCalculator.calculateTotalDistance(points)
                 val distanceStr = DistanceCalculator.formatDistance(distance)
