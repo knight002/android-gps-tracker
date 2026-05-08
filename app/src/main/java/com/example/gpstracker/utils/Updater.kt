@@ -54,7 +54,8 @@ object Updater {
 
                 val tagName = json.getString("tag_name")
                 println("Updater: Latest tag: $tagName")
-                
+                val versionName = tagName.removePrefix("v")
+
                 val releaseNotes = json.optString("body", "No release notes.")
                 val assets = json.getJSONArray("assets")
                 
@@ -67,7 +68,7 @@ object Updater {
                     if (APK_ASSET_NAME.containsMatchIn(name)) {
                         val downloadUrl = asset.getString("browser_download_url")
                         println("Updater: Found APK asset with download URL: $downloadUrl")
-                        return@withContext UpdateInfo(tagName, downloadUrl, releaseNotes)
+                        return@withContext UpdateInfo(versionName, downloadUrl, releaseNotes)
                     }
                 }
                 println("Updater: No matching APK asset found")

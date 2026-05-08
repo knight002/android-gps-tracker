@@ -1,6 +1,7 @@
 package com.example.gpstracker
 
 import android.os.Bundle
+import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
@@ -10,8 +11,8 @@ import com.example.gpstracker.utils.DistanceCalculator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.BoundingBox
-import org.osmdroid.views.MapView
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
@@ -26,10 +27,14 @@ class SessionDetailActivity : AppCompatActivity() {
         binding = ActivitySessionDetailBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        binding.mapView.setTileSource(TileSourceFactory.MAPNIK)
+        binding.mapView.setMultiTouchControls(true)
+        binding.mapView.visibility = View.GONE
+
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
         supportActionBar?.title = "Session Details"
 
-        binding.loadingBar.visibility = android.view.View.VISIBLE
+        binding.loadingBar.visibility = View.VISIBLE
 
         val sessionId = intent.getLongExtra("SESSION_ID", -1L)
         if (sessionId != -1L) {
@@ -38,6 +43,16 @@ class SessionDetailActivity : AppCompatActivity() {
             Toast.makeText(this, "Invalid session", Toast.LENGTH_SHORT).show()
             finish()
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        binding.mapView.onResume()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        binding.mapView.onPause()
     }
 
     override fun onSupportNavigateUp(): Boolean {
@@ -60,7 +75,6 @@ class SessionDetailActivity : AppCompatActivity() {
                     return@launch
                 }
 
-                // Background: compute distance, format text, create GeoPoints
                 val distanceStr = DistanceCalculator.formatDistance(
                     DistanceCalculator.calculateTotalDistance(points)
                 )
@@ -80,11 +94,13 @@ class SessionDetailActivity : AppCompatActivity() {
 
                 withContext(Dispatchers.Main) {
                     binding.sessionInfo.text = infoText
-                    displayRouteOnMap(geoPoints, points)
+                    binding.mapView.post {
+                        displayRouteOnMap(geoPoints, points)
+                    }
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    binding.loadingBar.visibility = android.view.View.GONE
+                    binding.loadingBar.visibility = View.GONE
                     Toast.makeText(this@SessionDetailActivity, "Error loading session: ${e.message}", Toast.LENGTH_LONG).show()
                 }
             }
@@ -99,8 +115,8 @@ class SessionDetailActivity : AppCompatActivity() {
         try {
             val polyline = Polyline()
             polyline.setPoints(geoPoints)
-            polyline.color = getColor(android.R.color.holo_blue_dark)
-            polyline.width = 8f
+            polyline.outlinePaint.color = getColor(android.R.color.holo_blue_dark)
+            polyline.outlinePaint.strokeWidth = 8f
             mapView.overlays.add(polyline)
 
             if (rawPoints.isNotEmpty()) {
@@ -129,10 +145,12 @@ class SessionDetailActivity : AppCompatActivity() {
             }
 
             mapView.invalidate()
+            mapView.visibility = View.VISIBLE
         } catch (e: Exception) {
             Toast.makeText(this, "Error displaying map: ${e.message}", Toast.LENGTH_LONG).show()
+            mapView.visibility = View.VISIBLE
         } finally {
-            binding.loadingBar.visibility = android.view.View.GONE
+            binding.loadingBar.visibility = View.GONE
         }
     }
 }
