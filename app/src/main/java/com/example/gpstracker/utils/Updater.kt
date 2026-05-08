@@ -17,7 +17,7 @@ import java.net.URL
 
 object Updater {
     private const val RELEASES_URL = "https://api.github.com/repos/knight002/android-gps-tracker/releases/latest"
-    private val APK_ASSET_NAME = Regex("GPSTracker\\.apk$")
+    private val APK_ASSET_NAME = Regex("GPSTracker.*\\.apk$")
 
     data class UpdateInfo(
         val versionName: String,
