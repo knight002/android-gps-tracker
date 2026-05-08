@@ -90,21 +90,31 @@ class SettingsActivity : AppCompatActivity() {
         val prefs = getSharedPreferences(TrackingService.PREFS_NAME, MODE_PRIVATE)
         val threshold = prefs.getFloat(TrackingService.KEY_MOVEMENT_THRESHOLD, Config.DEFAULT_MOVEMENT_THRESHOLD_M.toFloat())
         binding.movementThresholdEdit.setText(threshold.toString())
+        val dwellTime = prefs.getInt(TrackingService.KEY_DWELL_TIME, TrackingService.DEFAULT_DWELL_TIME_S)
+        binding.dwellTimeEdit.setText(dwellTime.toString())
     }
 
     private fun saveSettings() {
         val thresholdStr = binding.movementThresholdEdit.text.toString()
+        val dwellStr = binding.dwellTimeEdit.text.toString()
 
         val threshold = thresholdStr.toFloatOrNull()
+        val dwellTime = dwellStr.toIntOrNull()
 
         if (threshold == null || threshold <= 0) {
             binding.movementThresholdEdit.error = "Enter a valid number >0"
             return
         }
 
+        if (dwellTime == null || dwellTime <= 0) {
+            binding.dwellTimeEdit.error = "Enter a valid number >0"
+            return
+        }
+
         val prefs = getSharedPreferences(TrackingService.PREFS_NAME, MODE_PRIVATE)
         prefs.edit()
             .putFloat(TrackingService.KEY_MOVEMENT_THRESHOLD, threshold)
+            .putInt(TrackingService.KEY_DWELL_TIME, dwellTime)
             .apply()
 
         finish()

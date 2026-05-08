@@ -21,6 +21,23 @@ import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
 import java.io.File
 
+// MapView initialization approach (critical for performance):
+// MapView is NOT inflated in XML (activity_session_detail.xml uses a
+// FrameLayout container instead). It is created programmatically in
+// buildMapAndDisplayRoute() AFTER session data loads from the DB.
+//
+// Reason: osmdroid's MapView constructor triggers heavy initialization
+// (tile cache SQLite DB, tile provider, renderer setup) that blocks the
+// main thread. If inflated via setContentView(), the UI freezes before
+// rendering, causing the black-screen hang on session tap.
+//
+// Instead: the spinner (ProgressBar) renders immediately from XML,
+// then a coroutine loads data on IO, and MapView is built on the main
+// thread afterward — the user sees the spinner during the brief freeze.
+//
+// OSMdroid Configuration is also duplicated here (initOsMdroidConfig())
+// as a fallback for when the activity is restored from recents, in case
+// MainActivity's config init was skipped.
 class SessionDetailActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivitySessionDetailBinding

@@ -75,6 +75,8 @@ class TrackingService : LifecycleService() {
         const val PREFS_NAME = "gps_tracker_prefs"
         const val KEY_MOVEMENT_THRESHOLD = "movement_threshold"
         const val DEFAULT_MOVEMENT_THRESHOLD_M = 20.0
+        const val KEY_DWELL_TIME = "dwell_time_seconds"
+        const val DEFAULT_DWELL_TIME_S = 15
 
         @Volatile
         var lastKnownStatus: TrackingStatus = TrackingStatus.READY
@@ -82,6 +84,11 @@ class TrackingService : LifecycleService() {
         fun getMovementThreshold(context: Context): Double {
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             return prefs.getFloat(KEY_MOVEMENT_THRESHOLD, DEFAULT_MOVEMENT_THRESHOLD_M.toFloat()).toDouble()
+        }
+
+        fun getDwellTimeMs(context: Context): Long {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            return prefs.getInt(KEY_DWELL_TIME, DEFAULT_DWELL_TIME_S) * 1000L
         }
 
         fun isServiceRunning(context: Context): Boolean {
@@ -262,7 +269,8 @@ class TrackingService : LifecycleService() {
         } else if (trackingStatus == TrackingStatus.TRACKING && dwellJob == null) {
             log("No movement, starting dwell timer...")
             dwellJob = lifecycleScope.launch {
-                delay(30_000)
+                val dwellMs = getDwellTimeMs(this@TrackingService)
+                delay(dwellMs)
                 trackingStatus = TrackingStatus.DWELLING
                 log("Status changed to DWELLING")
                 val durStr = DistanceCalculator.formatDuration(System.currentTimeMillis() - sessionStartTime)
