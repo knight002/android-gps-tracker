@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="start_tracking"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_tracking"
+        android:shortcutShortLabel="@string/shortcut_start_tracking"
+        android:shortcutLongLabel="@string/shortcut_start_tracking_long">
+        <intent
+            android:action="com.example.gpstracker.START_TRACKING"
+            android:targetPackage="com.example.gpstracker"
+            android:targetClass="com.example.gpstracker.MainActivity" />
+    </shortcut>
+</shortcuts>

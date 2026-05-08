@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">GPS Tracker</string>
+    <string name="shortcut_start_tracking">Start Tracking</string>
+    <string name="shortcut_start_tracking_long">Start GPS Tracking</string>
 </resources>

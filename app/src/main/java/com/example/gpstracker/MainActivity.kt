@@ -94,6 +94,10 @@ class MainActivity : AppCompatActivity() {
         setupRecyclerView()
         setupTrackingButton()
         observeSessions()
+
+        if (intent?.action == "com.example.gpstracker.START_TRACKING") {
+            handleShortcutStart()
+        }
     }
 
     private fun initOsMdroidConfig() {
@@ -239,6 +243,23 @@ class MainActivity : AppCompatActivity() {
         startService(intent)
         updateButtonState(TrackingStatus.READY)
         Toast.makeText(this, "Tracking stopped", Toast.LENGTH_SHORT).show()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        if (intent.action == "com.example.gpstracker.START_TRACKING") {
+            handleShortcutStart()
+        }
+    }
+
+    private fun handleShortcutStart() {
+        if (TrackingService.isServiceRunning(this)) {
+            Toast.makeText(this, "Tracking is already active", Toast.LENGTH_SHORT).show()
+        } else if (hasRequiredPermissions()) {
+            startTracking()
+        } else {
+            Toast.makeText(this, "Grant permissions first via the Start Tracking button", Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun updateButtonState(status: TrackingStatus) {
