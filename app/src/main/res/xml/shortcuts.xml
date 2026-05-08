@@ -7,8 +7,12 @@
         android:shortcutShortLabel="@string/shortcut_start_tracking"
         android:shortcutLongLabel="@string/shortcut_start_tracking_long">
         <intent
-            android:action="com.example.gpstracker.START_TRACKING"
+            android:action="android.intent.action.VIEW"
             android:targetPackage="com.example.gpstracker"
-            android:targetClass="com.example.gpstracker.MainActivity" />
+            android:targetClass="com.example.gpstracker.MainActivity">
+            <extra
+                android:name="shortcut_action"
+                android:value="start_tracking" />
+        </intent>
     </shortcut>
 </shortcuts>

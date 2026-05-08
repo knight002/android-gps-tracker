@@ -95,7 +95,7 @@ class MainActivity : AppCompatActivity() {
         setupTrackingButton()
         observeSessions()
 
-        if (intent?.action == "com.example.gpstracker.START_TRACKING") {
+        if (intent?.getStringExtra("shortcut_action") == "start_tracking") {
             handleShortcutStart()
         }
     }
@@ -247,7 +247,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        if (intent.action == "com.example.gpstracker.START_TRACKING") {
+        if (intent.getStringExtra("shortcut_action") == "start_tracking") {
             handleShortcutStart()
         }
     }
