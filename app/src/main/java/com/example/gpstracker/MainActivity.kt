@@ -43,12 +43,16 @@ class MainActivity : AppCompatActivity() {
         override fun onReceive(context: Context?, intent: Intent?) {
             val lat = intent?.getDoubleExtra(TrackingService.EXTRA_LATITUDE, 0.0) ?: 0.0
             val lng = intent?.getDoubleExtra(TrackingService.EXTRA_LONGITUDE, 0.0) ?: 0.0
-            
+            val points = intent?.getIntExtra(TrackingService.EXTRA_POINTS, 0) ?: 0
+            val distanceStr = intent?.getStringExtra(TrackingService.EXTRA_DISTANCE_STR) ?: ""
+            val durationStr = intent?.getStringExtra(TrackingService.EXTRA_DURATION_STR) ?: ""
+
             updateButtonState(true)
-            
+
             if (lat != 0.0 && lng != 0.0) {
                 binding.locationText.text = "Location: %.4f, %.4f".format(lat, lng)
             }
+            binding.statsText.text = "Points: $points | Distance: $distanceStr | Duration: $durationStr"
         }
     }
 
@@ -241,6 +245,7 @@ class MainActivity : AppCompatActivity() {
             binding.trackButton.setBackgroundColor(getColor(android.R.color.holo_green_dark))
             binding.statusText.text = "Ready to track"
             binding.locationText.text = "Location: --"
+            binding.statsText.text = "Points: 0 | Distance: 0 m | Duration: 00:00:00"
         }
     }
 
