@@ -19,6 +19,9 @@ interface LocationPointDao {
     @Insert
     suspend fun insertPoint(point: LocationPoint): Long
 
+    @Insert
+    suspend fun insertPoints(points: List<LocationPoint>)
+
     @Query("DELETE FROM location_points WHERE sessionId = :sessionId")
     suspend fun deletePointsBySession(sessionId: Long)
 }

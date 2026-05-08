@@ -1,12 +1,58 @@
 package com.example.gpstracker
 
 import android.os.Bundle
+import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
 import com.example.gpstracker.databinding.ActivitySettingsBinding
+import com.example.gpstracker.utils.SessionExporter
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class SettingsActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivitySettingsBinding
+
+    private val exportLauncher = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) {
+            lifecycleScope.launch {
+                binding.exportButton.isEnabled = false
+                val result = SessionExporter.export(this@SettingsActivity, uri)
+                withContext(Dispatchers.Main) {
+                    binding.exportButton.isEnabled = true
+                    if (result.isSuccess) {
+                        Toast.makeText(this@SettingsActivity, "Sessions exported", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(this@SettingsActivity, "Export failed: ${result.exceptionOrNull()?.message}", Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+        }
+    }
+
+    private val importLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            lifecycleScope.launch {
+                binding.importButton.isEnabled = false
+                val result = SessionExporter.import(this@SettingsActivity, uri)
+                withContext(Dispatchers.Main) {
+                    binding.importButton.isEnabled = true
+                    if (result.isSuccess) {
+                        val count = result.getOrThrow()
+                        Toast.makeText(this@SettingsActivity, "$count sessions imported", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(this@SettingsActivity, "Import failed: ${result.exceptionOrNull()?.message}", Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -24,6 +70,14 @@ class SettingsActivity : AppCompatActivity() {
 
         binding.cancelButton.setOnClickListener {
             finish()
+        }
+
+        binding.exportButton.setOnClickListener {
+            exportLauncher.launch("gps_tracker_export.json")
+        }
+
+        binding.importButton.setOnClickListener {
+            importLauncher.launch(arrayOf("application/json"))
         }
     }
 
