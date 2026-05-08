@@ -41,13 +41,16 @@ class MainActivity : AppCompatActivity() {
 
     private val stateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
+            val statusName = intent?.getStringExtra(TrackingService.EXTRA_STATUS) ?: return
+            val status = try { TrackingStatus.valueOf(statusName) } catch (_: Exception) { return }
+
             val lat = intent?.getDoubleExtra(TrackingService.EXTRA_LATITUDE, 0.0) ?: 0.0
             val lng = intent?.getDoubleExtra(TrackingService.EXTRA_LONGITUDE, 0.0) ?: 0.0
             val points = intent?.getIntExtra(TrackingService.EXTRA_POINTS, 0) ?: 0
             val distanceStr = intent?.getStringExtra(TrackingService.EXTRA_DISTANCE_STR) ?: ""
             val durationStr = intent?.getStringExtra(TrackingService.EXTRA_DURATION_STR) ?: ""
 
-            updateButtonState(true)
+            updateButtonState(status)
 
             if (lat != 0.0 && lng != 0.0) {
                 binding.locationText.text = "Location: %.4f, %.4f".format(lat, lng)
@@ -143,8 +146,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun syncTrackingState() {
-        val isRunning = TrackingService.isServiceRunning(this)
-        updateButtonState(isRunning)
+        val status = if (TrackingService.isServiceRunning(this))
+            TrackingService.lastKnownStatus
+        else
+            TrackingStatus.READY
+        updateButtonState(status)
     }
 
     private fun registerStateReceiver() {
@@ -222,7 +228,7 @@ class MainActivity : AppCompatActivity() {
         } else {
             startService(intent)
         }
-        updateButtonState(true)
+        updateButtonState(TrackingStatus.TRACKING)
         Toast.makeText(this, "Tracking started", Toast.LENGTH_SHORT).show()
     }
 
@@ -231,21 +237,29 @@ class MainActivity : AppCompatActivity() {
             action = TrackingService.ACTION_STOP
         }
         startService(intent)
-        updateButtonState(false)
+        updateButtonState(TrackingStatus.READY)
         Toast.makeText(this, "Tracking stopped", Toast.LENGTH_SHORT).show()
     }
 
-    private fun updateButtonState(isTracking: Boolean) {
-        if (isTracking) {
-            binding.trackButton.text = "Stop Tracking"
-            binding.trackButton.setBackgroundColor(getColor(android.R.color.holo_red_dark))
-            binding.statusText.text = "Tracking active..."
-        } else {
-            binding.trackButton.text = "Start Tracking"
-            binding.trackButton.setBackgroundColor(getColor(android.R.color.holo_green_dark))
-            binding.statusText.text = "Ready to track"
-            binding.locationText.text = "Location: --"
-            binding.statsText.text = "Points: 0 | Distance: 0 m | Duration: 00:00:00"
+    private fun updateButtonState(status: TrackingStatus) {
+        when (status) {
+            TrackingStatus.READY -> {
+                binding.trackButton.text = "Start Tracking"
+                binding.trackButton.setBackgroundColor(getColor(android.R.color.holo_green_dark))
+                binding.statusText.text = "Ready to track"
+                binding.locationText.text = "Location: --"
+                binding.statsText.text = "Points: 0 | Distance: 0 m | Duration: 00:00:00"
+            }
+            TrackingStatus.TRACKING -> {
+                binding.trackButton.text = "Stop Tracking"
+                binding.trackButton.setBackgroundColor(getColor(android.R.color.holo_red_dark))
+                binding.statusText.text = "Tracking active..."
+            }
+            TrackingStatus.DWELLING -> {
+                binding.trackButton.text = "Stop Tracking"
+                binding.trackButton.setBackgroundColor(getColor(android.R.color.holo_orange_dark))
+                binding.statusText.text = "Stationary - waiting for movement..."
+            }
         }
     }
 
