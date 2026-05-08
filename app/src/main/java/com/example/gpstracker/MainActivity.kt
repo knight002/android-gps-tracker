@@ -6,6 +6,9 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.content.pm.ShortcutInfo
+import android.content.pm.ShortcutManager
+import android.graphics.drawable.Icon
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -94,10 +97,26 @@ class MainActivity : AppCompatActivity() {
         setupRecyclerView()
         setupTrackingButton()
         observeSessions()
+        registerShortcut()
 
         if (intent?.getStringExtra("shortcut_action") == "start_tracking") {
             handleShortcutStart()
         }
+    }
+
+    private fun registerShortcut() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N_MR1) return
+        val shortcutManager = getSystemService(ShortcutManager::class.java) ?: return
+        val shortcut = ShortcutInfo.Builder(this, "start_tracking")
+            .setShortLabel(getString(R.string.shortcut_start_tracking))
+            .setLongLabel(getString(R.string.shortcut_start_tracking_long))
+            .setIcon(Icon.createWithResource(this, R.drawable.ic_shortcut_tracking))
+            .setIntent(Intent(this, MainActivity::class.java).apply {
+                action = Intent.ACTION_VIEW
+                putExtra("shortcut_action", "start_tracking")
+            })
+            .build()
+        shortcutManager.setDynamicShortcuts(listOf(shortcut))
     }
 
     private fun initOsMdroidConfig() {
