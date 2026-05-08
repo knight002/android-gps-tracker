@@ -1,23 +1,21 @@
 package com.example.gpstracker.utils
 
 import android.app.Activity
-import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.os.Build
 import android.widget.Toast
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 
 object Updater {
-    private const val RELEASES_URL = "https://api.github.com/repos/knight002/android-gps-tracker/releases/latest"
-    private val APK_ASSET_NAME = Regex("GPSTracker.*\\.apk$")
+    private const val RELEASES_URL = "https://github.com/knight002/android-gps-tracker/releases/latest"
+    private const val DOWNLOAD_BASE = "https://github.com/knight002/android-gps-tracker/releases/download"
+    private const val APK_FILENAME = "GPSTracker-signed.apk"
 
     data class UpdateInfo(
         val versionName: String,
@@ -32,47 +30,34 @@ object Updater {
                 val url = URL(RELEASES_URL)
                 connection = url.openConnection() as HttpURLConnection
                 connection.requestMethod = "GET"
-                connection.setRequestProperty("Accept", "application/vnd.github.v3+json")
                 connection.setRequestProperty("User-Agent", "GPSTracker-App")
                 connection.connectTimeout = 15000
                 connection.readTimeout = 15000
                 connection.instanceFollowRedirects = true
 
-                println("Updater: Checking for updates...")
+                println("Updater: Checking for updates at $RELEASES_URL")
                 println("Updater: Response code: ${connection.responseCode}")
 
                 if (connection.responseCode != 200) {
-                    val errorBody = try { connection.errorStream?.bufferedReader()?.readText() } catch (_: Exception) { null }
-                    println("Updater: API error response: $errorBody")
                     return@withContext null
                 }
 
-                val body = connection.inputStream.bufferedReader().use { it.readText() }
-                println("Updater: Response body length: ${body.length}")
-                
-                val json = JSONObject(body)
+                val finalUrl = connection.url.toString()
+                println("Updater: Final URL after redirect: $finalUrl")
 
-                val tagName = json.getString("tag_name")
+                val tagName = finalUrl.substringAfter("/tag/")
+                if (tagName.isBlank()) {
+                    println("Updater: Could not extract tag from URL")
+                    return@withContext null
+                }
+
                 println("Updater: Latest tag: $tagName")
                 val versionName = tagName.removePrefix("v")
 
-                val releaseNotes = json.optString("body", "No release notes.")
-                val assets = json.getJSONArray("assets")
-                
-                println("Updater: Found ${assets.length()} assets")
+                val downloadUrl = "$DOWNLOAD_BASE/$tagName/$APK_FILENAME"
+                println("Updater: Download URL: $downloadUrl")
 
-                for (i in 0 until assets.length()) {
-                    val asset = assets.getJSONObject(i)
-                    val name = asset.getString("name")
-                    println("Updater: Checking asset: $name")
-                    if (APK_ASSET_NAME.containsMatchIn(name)) {
-                        val downloadUrl = asset.getString("browser_download_url")
-                        println("Updater: Found APK asset with download URL: $downloadUrl")
-                        return@withContext UpdateInfo(versionName, downloadUrl, releaseNotes)
-                    }
-                }
-                println("Updater: No matching APK asset found")
-                return@withContext null
+                return@withContext UpdateInfo(versionName, downloadUrl, "")
             } catch (e: Exception) {
                 println("Updater: Exception in checkForUpdates: ${e.message}")
                 e.printStackTrace()
