@@ -276,32 +276,39 @@ class TrackingService : LifecycleService() {
         val dist = DistanceCalculator.haversineDistance(lastRecordedLat!!, lastRecordedLng!!, lat, lng)
         log("dist=$dist, threshold=$movementThreshold")
 
-        // Only save to DB if movement > threshold
-        if (dist > movementThreshold) {
-            log("Movement detected, recording point...")
+        if (trackingStatus == TrackingStatus.TRACKING) {
+            // Save every GPS fix while tracking
             lastRecordedLat = lat
             lastRecordedLng = lng
             totalDistance += dist
-            val wasDwelling = trackingStatus == TrackingStatus.DWELLING
-            trackingStatus = TrackingStatus.TRACKING
-            dwellJob?.cancel()
-            dwellJob = null
             recordPoint(lat, lng, alt)
-            if (wasDwelling) {
-                updateLocationRequestFrequency()
+
+            if (dist > movementThreshold) {
+                log("Movement detected, resetting dwell timer...")
+                dwellJob?.cancel()
+                dwellJob = null
+            } else if (dwellJob == null) {
+                log("No movement, starting dwell timer...")
+                dwellJob = lifecycleScope.launch {
+                    val dwellMs = getDwellTimeMs(this@TrackingService)
+                    delay(dwellMs)
+                    trackingStatus = TrackingStatus.DWELLING
+                    log("Status changed to DWELLING")
+                    updateLocationRequestFrequency()
+                    val durStr = DistanceCalculator.formatDuration(System.currentTimeMillis() - sessionStartTime)
+                    val distStr = DistanceCalculator.formatDistance(totalDistance)
+                    broadcastStateChanged(this@TrackingService, trackingStatus, lastLat ?: 0.0, lastLng ?: 0.0, pointCount, distStr, durStr)
+                }
             }
-        } else if (trackingStatus == TrackingStatus.TRACKING && dwellJob == null) {
-            log("No movement, starting dwell timer...")
-            dwellJob = lifecycleScope.launch {
-                val dwellMs = getDwellTimeMs(this@TrackingService)
-                delay(dwellMs)
-                trackingStatus = TrackingStatus.DWELLING
-                log("Status changed to DWELLING")
-                updateLocationRequestFrequency()
-                val durStr = DistanceCalculator.formatDuration(System.currentTimeMillis() - sessionStartTime)
-                val distStr = DistanceCalculator.formatDistance(totalDistance)
-                broadcastStateChanged(this@TrackingService, trackingStatus, lastLat ?: 0.0, lastLng ?: 0.0, pointCount, distStr, durStr)
-            }
+        } else if (trackingStatus == TrackingStatus.DWELLING && dist > movementThreshold) {
+            // Movement detected during dwell — switch to TRACKING and save this point
+            log("Movement detected while dwelling, switching to TRACKING...")
+            lastRecordedLat = lat
+            lastRecordedLng = lng
+            totalDistance += dist
+            trackingStatus = TrackingStatus.TRACKING
+            recordPoint(lat, lng, alt)
+            updateLocationRequestFrequency()
         }
 
         val durStr = DistanceCalculator.formatDuration(System.currentTimeMillis() - sessionStartTime)
