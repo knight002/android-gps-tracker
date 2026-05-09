@@ -293,6 +293,7 @@ class TrackingService : LifecycleService() {
                     val dwellMs = getDwellTimeMs(this@TrackingService)
                     delay(dwellMs)
                     trackingStatus = TrackingStatus.DWELLING
+                    dwellJob = null
                     log("Status changed to DWELLING")
                     updateLocationRequestFrequency()
                     val durStr = DistanceCalculator.formatDuration(System.currentTimeMillis() - sessionStartTime)
@@ -307,6 +308,7 @@ class TrackingService : LifecycleService() {
             lastRecordedLng = lng
             totalDistance += dist
             trackingStatus = TrackingStatus.TRACKING
+            dwellJob = null
             recordPoint(lat, lng, alt)
             updateLocationRequestFrequency()
         }
