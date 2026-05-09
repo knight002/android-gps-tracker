@@ -92,14 +92,22 @@ class SettingsActivity : AppCompatActivity() {
         binding.movementThresholdEdit.setText(threshold.toString())
         val dwellTime = prefs.getInt(TrackingService.KEY_DWELL_TIME, TrackingService.DEFAULT_DWELL_TIME_S)
         binding.dwellTimeEdit.setText(dwellTime.toString())
+        val trackingInterval = prefs.getInt(TrackingService.KEY_TRACKING_INTERVAL, TrackingService.DEFAULT_TRACKING_INTERVAL_S)
+        binding.trackingIntervalEdit.setText(trackingInterval.toString())
+        val dwellingInterval = prefs.getInt(TrackingService.KEY_DWELLING_INTERVAL, TrackingService.DEFAULT_DWELLING_INTERVAL_S)
+        binding.dwellingIntervalEdit.setText(dwellingInterval.toString())
     }
 
     private fun saveSettings() {
         val thresholdStr = binding.movementThresholdEdit.text.toString()
         val dwellStr = binding.dwellTimeEdit.text.toString()
+        val trackingIntervalStr = binding.trackingIntervalEdit.text.toString()
+        val dwellingIntervalStr = binding.dwellingIntervalEdit.text.toString()
 
         val threshold = thresholdStr.toFloatOrNull()
         val dwellTime = dwellStr.toIntOrNull()
+        val trackingInterval = trackingIntervalStr.toIntOrNull()
+        val dwellingInterval = dwellingIntervalStr.toIntOrNull()
 
         if (threshold == null || threshold <= 0) {
             binding.movementThresholdEdit.error = "Enter a valid number >0"
@@ -111,10 +119,22 @@ class SettingsActivity : AppCompatActivity() {
             return
         }
 
+        if (trackingInterval == null || trackingInterval <= 0) {
+            binding.trackingIntervalEdit.error = "Enter a valid number >0"
+            return
+        }
+
+        if (dwellingInterval == null || dwellingInterval <= 0) {
+            binding.dwellingIntervalEdit.error = "Enter a valid number >0"
+            return
+        }
+
         val prefs = getSharedPreferences(TrackingService.PREFS_NAME, MODE_PRIVATE)
         prefs.edit()
             .putFloat(TrackingService.KEY_MOVEMENT_THRESHOLD, threshold)
             .putInt(TrackingService.KEY_DWELL_TIME, dwellTime)
+            .putInt(TrackingService.KEY_TRACKING_INTERVAL, trackingInterval)
+            .putInt(TrackingService.KEY_DWELLING_INTERVAL, dwellingInterval)
             .apply()
 
         finish()

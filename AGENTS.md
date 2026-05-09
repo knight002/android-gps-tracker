@@ -19,6 +19,7 @@
 ## Tracking Status
 - Three states: `READY`, `TRACKING`, `DWELLING`
 - Dwell = configurable seconds (default 15, stored in prefs as `dwell_time_seconds`) without exceeding movement threshold (default 20m).
+- GPS interval adjusts dynamically: tracking interval (default 5s) while moving, dwelling interval (default 30s) while stationary. Both configurable in Settings.
 
 ## Release
 - Keystore: regenerated at `/tmp/release.jks`, password `password`.

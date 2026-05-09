@@ -77,6 +77,10 @@ class TrackingService : LifecycleService() {
         const val DEFAULT_MOVEMENT_THRESHOLD_M = 20.0
         const val KEY_DWELL_TIME = "dwell_time_seconds"
         const val DEFAULT_DWELL_TIME_S = 15
+        const val KEY_TRACKING_INTERVAL = "tracking_interval_seconds"
+        const val DEFAULT_TRACKING_INTERVAL_S = 5
+        const val KEY_DWELLING_INTERVAL = "dwelling_interval_seconds"
+        const val DEFAULT_DWELLING_INTERVAL_S = 30
 
         @Volatile
         var lastKnownStatus: TrackingStatus = TrackingStatus.READY
@@ -89,6 +93,16 @@ class TrackingService : LifecycleService() {
         fun getDwellTimeMs(context: Context): Long {
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             return prefs.getInt(KEY_DWELL_TIME, DEFAULT_DWELL_TIME_S) * 1000L
+        }
+
+        fun getTrackingIntervalMs(context: Context): Long {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            return prefs.getInt(KEY_TRACKING_INTERVAL, DEFAULT_TRACKING_INTERVAL_S) * 1000L
+        }
+
+        fun getDwellingIntervalMs(context: Context): Long {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            return prefs.getInt(KEY_DWELLING_INTERVAL, DEFAULT_DWELLING_INTERVAL_S) * 1000L
         }
 
         fun isServiceRunning(context: Context): Boolean {
@@ -196,10 +210,6 @@ class TrackingService : LifecycleService() {
             }
         }
 
-        val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 5000L)
-            .setMinUpdateIntervalMillis(1000L)
-            .build()
-
         lifecycleScope.launch {
             val db = AppDatabase.getDatabase(this@TrackingService)
             sessionStartTime = System.currentTimeMillis()
@@ -219,12 +229,22 @@ class TrackingService : LifecycleService() {
                 }
             }
 
-            fusedLocationClient.requestLocationUpdates(
-                locationRequest,
-                locationCallback,
-                Looper.getMainLooper()
-            )
+            updateLocationRequestFrequency()
         }
+    }
+
+    private fun updateLocationRequestFrequency() {
+        val interval = when (trackingStatus) {
+            TrackingStatus.DWELLING -> getDwellingIntervalMs(this)
+            else -> getTrackingIntervalMs(this)
+        }
+        val minInterval = maxOf(interval / 5, 1000L)
+        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, interval)
+            .setMinUpdateIntervalMillis(minInterval)
+            .build()
+        fusedLocationClient.removeLocationUpdates(locationCallback)
+        fusedLocationClient.requestLocationUpdates(request, locationCallback, Looper.getMainLooper())
+        log("Location request interval updated to ${interval}ms (status=$trackingStatus)")
     }
 
     private fun handleLocation(location: android.location.Location, movementThreshold: Double) {
@@ -262,10 +282,14 @@ class TrackingService : LifecycleService() {
             lastRecordedLat = lat
             lastRecordedLng = lng
             totalDistance += dist
+            val wasDwelling = trackingStatus == TrackingStatus.DWELLING
             trackingStatus = TrackingStatus.TRACKING
             dwellJob?.cancel()
             dwellJob = null
             recordPoint(lat, lng, alt)
+            if (wasDwelling) {
+                updateLocationRequestFrequency()
+            }
         } else if (trackingStatus == TrackingStatus.TRACKING && dwellJob == null) {
             log("No movement, starting dwell timer...")
             dwellJob = lifecycleScope.launch {
@@ -273,6 +297,7 @@ class TrackingService : LifecycleService() {
                 delay(dwellMs)
                 trackingStatus = TrackingStatus.DWELLING
                 log("Status changed to DWELLING")
+                updateLocationRequestFrequency()
                 val durStr = DistanceCalculator.formatDuration(System.currentTimeMillis() - sessionStartTime)
                 val distStr = DistanceCalculator.formatDistance(totalDistance)
                 broadcastStateChanged(this@TrackingService, trackingStatus, lastLat ?: 0.0, lastLng ?: 0.0, pointCount, distStr, durStr)
