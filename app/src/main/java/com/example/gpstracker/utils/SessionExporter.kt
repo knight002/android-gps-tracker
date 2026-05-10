@@ -10,20 +10,45 @@ import org.json.JSONObject
 
 object SessionExporter {
 
+    private const val PREFS_NAME = "gps_tracker_prefs"
+    private const val KEY_MOVEMENT_THRESHOLD = "movement_threshold"
+    private const val KEY_DWELL_TIME = "dwell_time_seconds"
+    private const val KEY_TRACKING_INTERVAL = "tracking_interval_seconds"
+    private const val KEY_DWELLING_INTERVAL = "dwelling_interval_seconds"
+
+    private data class Settings(
+        val movementThresholdM: Double,
+        val dwellTimeS: Int,
+        val trackingIntervalS: Int,
+        val dwellingIntervalS: Int
+    )
+
+    private fun loadSettings(context: Context): Settings {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return Settings(
+            movementThresholdM = prefs.getFloat(KEY_MOVEMENT_THRESHOLD, 20.0f).toDouble(),
+            dwellTimeS = prefs.getInt(KEY_DWELL_TIME, 15),
+            trackingIntervalS = prefs.getInt(KEY_TRACKING_INTERVAL, 5),
+            dwellingIntervalS = prefs.getInt(KEY_DWELLING_INTERVAL, 30)
+        )
+    }
+
     private data class SessionJson(
         val startTime: Long,
         val endTime: Long?,
         val totalPoints: Int,
-        val points: List<LocationPoint>
+        val points: List<LocationPoint>,
+        val settings: Settings
     )
 
     suspend fun export(context: Context, uri: Uri): Result<Unit> {
         return try {
             val db = AppDatabase.getDatabase(context)
             val sessions = db.sessionDao().getAllSessionsSync()
+            val settings = loadSettings(context)
             val exportData = sessions.map { session ->
                 val points = db.locationPointDao().getPointsBySessionSync(session.id)
-                SessionJson(session.startTime, session.endTime, session.totalPoints, points)
+                SessionJson(session.startTime, session.endTime, session.totalPoints, points, settings)
             }
             val json = buildJson(exportData)
             context.contentResolver.openOutputStream(uri)?.use { output ->
@@ -83,6 +108,12 @@ object SessionExporter {
             sObj.put("startTime", s.startTime)
             sObj.put("endTime", s.endTime ?: JSONObject.NULL)
             sObj.put("totalPoints", s.totalPoints)
+            val settingsObj = JSONObject()
+            settingsObj.put("movementThresholdM", s.settings.movementThresholdM)
+            settingsObj.put("dwellTimeS", s.settings.dwellTimeS)
+            settingsObj.put("trackingIntervalS", s.settings.trackingIntervalS)
+            settingsObj.put("dwellingIntervalS", s.settings.dwellingIntervalS)
+            sObj.put("settings", settingsObj)
             val pointsArr = JSONArray()
             for (p in s.points) {
                 val pObj = JSONObject()
