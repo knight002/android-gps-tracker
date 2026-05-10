@@ -27,4 +27,4 @@
 - Keystore: regenerated at `/tmp/release.jks`, password `password`.
 - Sign: `zipalign` + `apksigner` from build-tools/34.0.0.
 - Upload: `gh release create` with APK (asset name `GPSTracker-signed.apk`).
-- Version naming: `v2.8` tag → `2.8` versionName in build.gradle.
+- Version naming: `v2.9` tag → `2.9` versionName in build.gradle.
