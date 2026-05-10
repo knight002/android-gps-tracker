@@ -21,9 +21,10 @@
 - Dwell = configurable seconds (default 15, stored in prefs as `dwell_time_seconds`) without exceeding movement threshold (default 20m).
 - GPS interval adjusts dynamically: tracking interval (default 5s) while moving, dwelling interval (default 30s) while stationary. Both configurable in Settings.
 - `dwellJob` must be set to `null` both inside the completed dwell coroutine AND in the DWELLING→TRACKING transition, otherwise the dwell timer only fires once (completed Job ref prevents `null` check from passing).
+- GPS noise reduction: spike rejection (discard fixes with speed >15 m/s) + EMA smoothing (α=0.3) on coordinates for dwell detection. Raw coords saved to DB.
 
 ## Release
 - Keystore: regenerated at `/tmp/release.jks`, password `password`.
 - Sign: `zipalign` + `apksigner` from build-tools/34.0.0.
 - Upload: `gh release create` with APK (asset name `GPSTracker-signed.apk`).
-- Version naming: `v2.7` tag → `2.7` versionName in build.gradle.
+- Version naming: `v2.8` tag → `2.8` versionName in build.gradle.

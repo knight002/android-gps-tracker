@@ -142,6 +142,15 @@ class TrackingService : LifecycleService() {
     private var lastLng: Double? = null  // For UI display
     private var lastRecordedLat: Double? = null  // Last point saved to DB
     private var lastRecordedLng: Double? = null  // Last point saved to DB
+    private var lastRecordedTimestamp: Long = 0
+
+    // EMA smoothing for GPS noise reduction
+    private val alpha = 0.3
+    private val maxSpeedMps = 15.0
+    private var filteredLat = 0.0
+    private var filteredLng = 0.0
+    private var lastFilteredLat = 0.0
+    private var lastFilteredLng = 0.0
 
     override fun onCreate() {
         super.onCreate()
@@ -192,6 +201,11 @@ class TrackingService : LifecycleService() {
         lastLng = null
         lastRecordedLat = null
         lastRecordedLng = null
+        lastRecordedTimestamp = 0
+        filteredLat = 0.0
+        filteredLng = 0.0
+        lastFilteredLat = 0.0
+        lastFilteredLng = 0.0
         pointCount = 0
         totalDistance = 0.0
         trackingStatus = TrackingStatus.TRACKING
@@ -252,17 +266,20 @@ class TrackingService : LifecycleService() {
         val lng = location.longitude
         val alt = location.altitude
 
-        // Always update UI display location
         lastLat = lat
         lastLng = lng
 
         log("handleLocation lat=$lat, lng=$lng, lastRecordedLat=$lastRecordedLat, lastRecordedLng=$lastRecordedLng")
 
-        // If no last recorded point, record this one
         if (lastRecordedLat == null || lastRecordedLng == null) {
-            log("First point, recording...")
+            log("First point, initializing filters and recording...")
+            filteredLat = lat
+            filteredLng = lng
+            lastFilteredLat = lat
+            lastFilteredLng = lng
             lastRecordedLat = lat
             lastRecordedLng = lng
+            lastRecordedTimestamp = System.currentTimeMillis()
             trackingStatus = TrackingStatus.TRACKING
             dwellJob?.cancel()
             dwellJob = null
@@ -272,14 +289,30 @@ class TrackingService : LifecycleService() {
             return
         }
 
-        // Calculate distance from last recorded point
-        val dist = DistanceCalculator.haversineDistance(lastRecordedLat!!, lastRecordedLng!!, lat, lng)
-        log("dist=$dist, threshold=$movementThreshold")
+        // SPIKE REJECTION: discard fixes with implausible speed
+        val timeDelta = (System.currentTimeMillis() - lastRecordedTimestamp) / 1000.0
+        val rawDist = DistanceCalculator.haversineDistance(lastRecordedLat!!, lastRecordedLng!!, lat, lng)
+        val speed = if (timeDelta > 0) rawDist / timeDelta else 0.0
+        if (speed > maxSpeedMps) {
+            log("GPS spike rejected: rawDist=${"%.1f".format(rawDist)}m, speed=${"%.1f".format(speed)}m/s")
+            return
+        }
+
+        // EMA smoothing on accepted fixes
+        filteredLat = alpha * lat + (1.0 - alpha) * filteredLat
+        filteredLng = alpha * lng + (1.0 - alpha) * filteredLng
+
+        // Distance using filtered coordinates for stable dwell detection
+        val dist = DistanceCalculator.haversineDistance(lastFilteredLat, lastFilteredLng, filteredLat, filteredLng)
+        lastFilteredLat = filteredLat
+        lastFilteredLng = filteredLng
+
+        log("filteredDist=$dist, threshold=$movementThreshold")
 
         if (trackingStatus == TrackingStatus.TRACKING) {
-            // Save every GPS fix while tracking
             lastRecordedLat = lat
             lastRecordedLng = lng
+            lastRecordedTimestamp = System.currentTimeMillis()
             totalDistance += dist
             recordPoint(lat, lng, alt)
 
@@ -302,10 +335,10 @@ class TrackingService : LifecycleService() {
                 }
             }
         } else if (trackingStatus == TrackingStatus.DWELLING && dist > movementThreshold) {
-            // Movement detected during dwell — switch to TRACKING and save this point
             log("Movement detected while dwelling, switching to TRACKING...")
             lastRecordedLat = lat
             lastRecordedLng = lng
+            lastRecordedTimestamp = System.currentTimeMillis()
             totalDistance += dist
             trackingStatus = TrackingStatus.TRACKING
             dwellJob = null
@@ -434,6 +467,11 @@ class TrackingService : LifecycleService() {
             lastLng = null
             lastRecordedLat = null
             lastRecordedLng = null
+            lastRecordedTimestamp = 0
+            filteredLat = 0.0
+            filteredLng = 0.0
+            lastFilteredLat = 0.0
+            lastFilteredLng = 0.0
             trackingStatus = TrackingStatus.READY
         }
         lastKnownStatus = TrackingStatus.READY
