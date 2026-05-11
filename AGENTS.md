@@ -29,4 +29,10 @@
 - Keystore: regenerated at `/tmp/release.jks`, password `password`.
 - Sign: `zipalign` + `apksigner` from build-tools/34.0.0.
 - Upload: `gh release create` with APK (asset name `GPSTracker-signed.apk`).
-- Version naming: `v2.10` tag → `2.10` versionName in build.gradle.
+- Version naming: `v2.11` tag → `2.11` versionName in build.gradle.
+
+## App Shortcut (v2.11)
+- Shortcut uses `ShortcutStartActivity` (transparent theme) instead of `MainActivity`
+- Starts tracking service directly without showing app UI
+- If permissions missing, opens MainActivity to request them
+- Theme: `Theme.GPSTracker.Transparent` with `android:excludeFromRecents="true"`, `android:noHistory="true"`

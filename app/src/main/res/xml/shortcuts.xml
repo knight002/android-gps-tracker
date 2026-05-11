@@ -9,10 +9,6 @@
         <intent
             android:action="android.intent.action.VIEW"
             android:targetPackage="com.example.gpstracker"
-            android:targetClass="com.example.gpstracker.MainActivity">
-            <extra
-                android:name="shortcut_action"
-                android:value="start_tracking" />
-        </intent>
+            android:targetClass="com.example.gpstracker.ShortcutStartActivity" />
     </shortcut>
 </shortcuts>

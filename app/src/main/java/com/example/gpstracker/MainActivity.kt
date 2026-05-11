@@ -111,9 +111,8 @@ class MainActivity : AppCompatActivity() {
             .setShortLabel(getString(R.string.shortcut_start_tracking))
             .setLongLabel(getString(R.string.shortcut_start_tracking_long))
             .setIcon(Icon.createWithResource(this, R.drawable.ic_shortcut_tracking))
-            .setIntent(Intent(this, MainActivity::class.java).apply {
+            .setIntent(Intent(this, ShortcutStartActivity::class.java).apply {
                 action = Intent.ACTION_VIEW
-                putExtra("shortcut_action", "start_tracking")
             })
             .build()
         shortcutManager.setDynamicShortcuts(listOf(shortcut))

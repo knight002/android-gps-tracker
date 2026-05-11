@@ -42,6 +42,14 @@
             android:name=".AboutActivity"
             android:exported="false" />
 
+        <activity
+            android:name=".ShortcutStartActivity"
+            android:exported="true"
+            android:theme="@style/Theme.GPSTracker.Transparent"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:noHistory="true" />
+
         <service
             android:name=".TrackingService"
             android:enabled="true"
