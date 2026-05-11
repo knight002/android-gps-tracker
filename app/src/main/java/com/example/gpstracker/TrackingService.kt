@@ -144,6 +144,13 @@ class TrackingService : LifecycleService() {
     private var lastRecordedLng: Double? = null  // Last point saved to DB
     private var lastRecordedTimestamp: Long = 0
 
+    private var lastFixLat: Double? = null  // Last valid fix (for spike rejection)
+    private var lastFixLng: Double? = null
+    private var lastFixTimestamp: Long = 0
+
+    private var dwellOriginLat: Double? = null  // Fixed origin when entering DWELLING
+    private var dwellOriginLng: Double? = null
+
     // EMA smoothing for GPS noise reduction
     private val alpha = 0.3
     private val maxSpeedMps = 15.0
@@ -202,6 +209,11 @@ class TrackingService : LifecycleService() {
         lastRecordedLat = null
         lastRecordedLng = null
         lastRecordedTimestamp = 0
+        lastFixLat = null
+        lastFixLng = null
+        lastFixTimestamp = 0
+        dwellOriginLat = null
+        dwellOriginLng = null
         filteredLat = 0.0
         filteredLng = 0.0
         lastFilteredLat = 0.0
@@ -271,6 +283,8 @@ class TrackingService : LifecycleService() {
 
         log("handleLocation lat=$lat, lng=$lng, lastRecordedLat=$lastRecordedLat, lastRecordedLng=$lastRecordedLng")
 
+        val now = System.currentTimeMillis()
+
         if (lastRecordedLat == null || lastRecordedLng == null) {
             log("First point, initializing filters and recording...")
             filteredLat = lat
@@ -279,44 +293,58 @@ class TrackingService : LifecycleService() {
             lastFilteredLng = lng
             lastRecordedLat = lat
             lastRecordedLng = lng
-            lastRecordedTimestamp = System.currentTimeMillis()
+            lastRecordedTimestamp = now
+            lastFixLat = lat
+            lastFixLng = lng
+            lastFixTimestamp = now
             trackingStatus = TrackingStatus.TRACKING
             dwellJob?.cancel()
             dwellJob = null
             recordPoint(lat, lng, alt)
-            val durStr = DistanceCalculator.formatDuration(System.currentTimeMillis() - sessionStartTime)
+            val durStr = DistanceCalculator.formatDuration(now - sessionStartTime)
             broadcastStateChanged(this, trackingStatus, lat, lng, pointCount, "0 m", durStr)
             return
         }
 
-        // SPIKE REJECTION: discard fixes with implausible speed
-        val timeDelta = (System.currentTimeMillis() - lastRecordedTimestamp) / 1000.0
-        val rawDist = DistanceCalculator.haversineDistance(lastRecordedLat!!, lastRecordedLng!!, lat, lng)
+        // SPIKE REJECTION: discard fixes with implausible speed (uses lastFix* to work in DWELLING)
+        val timeDelta = (now - lastFixTimestamp) / 1000.0
+        val rawDist = DistanceCalculator.haversineDistance(lastFixLat!!, lastFixLng!!, lat, lng)
         val speed = if (timeDelta > 0) rawDist / timeDelta else 0.0
         if (speed > maxSpeedMps) {
-            log("GPS spike rejected: rawDist=${"%.1f".format(rawDist)}m, speed=${"%.1f".format(speed)}m/s")
+            log("GPS spike rejected: rawDist=${"%.1f".format(rawDist)}m, speed=${"%.1f".format(speed)}m/s, timeDelta=${"%.1f".format(timeDelta)}s")
             return
         }
+
+        lastFixLat = lat
+        lastFixLng = lng
+        lastFixTimestamp = now
 
         // EMA smoothing on accepted fixes
         filteredLat = alpha * lat + (1.0 - alpha) * filteredLat
         filteredLng = alpha * lng + (1.0 - alpha) * filteredLng
 
         // Distance using filtered coordinates for stable dwell detection
-        val dist = DistanceCalculator.haversineDistance(lastFilteredLat, lastFilteredLng, filteredLat, filteredLng)
+        val stepDist = DistanceCalculator.haversineDistance(lastFilteredLat, lastFilteredLng, filteredLat, filteredLng)
         lastFilteredLat = filteredLat
         lastFilteredLng = filteredLng
 
-        log("filteredDist=$dist, threshold=$movementThreshold")
+        // For dwell exit: use distance from dwell origin (set when entering DWELLING)
+        val effectiveDist = if (trackingStatus == TrackingStatus.DWELLING && dwellOriginLat != null && dwellOriginLng != null) {
+            DistanceCalculator.haversineDistance(dwellOriginLat!!, dwellOriginLng!!, filteredLat, filteredLng)
+        } else {
+            stepDist
+        }
+
+        log("stepDist=$stepDist, effectiveDist=$effectiveDist, threshold=$movementThreshold, status=$trackingStatus")
 
         if (trackingStatus == TrackingStatus.TRACKING) {
             lastRecordedLat = lat
             lastRecordedLng = lng
-            lastRecordedTimestamp = System.currentTimeMillis()
-            totalDistance += dist
+            lastRecordedTimestamp = now
+            totalDistance += stepDist
             recordPoint(lat, lng, alt)
 
-            if (dist > movementThreshold) {
+            if (stepDist > movementThreshold) {
                 log("Movement detected, resetting dwell timer...")
                 dwellJob?.cancel()
                 dwellJob = null
@@ -326,21 +354,25 @@ class TrackingService : LifecycleService() {
                     val dwellMs = getDwellTimeMs(this@TrackingService)
                     delay(dwellMs)
                     trackingStatus = TrackingStatus.DWELLING
+                    dwellOriginLat = filteredLat
+                    dwellOriginLng = filteredLng
                     dwellJob = null
-                    log("Status changed to DWELLING")
+                    log("Status changed to DWELLING, origin=($dwellOriginLat, $dwellOriginLng)")
                     updateLocationRequestFrequency()
                     val durStr = DistanceCalculator.formatDuration(System.currentTimeMillis() - sessionStartTime)
                     val distStr = DistanceCalculator.formatDistance(totalDistance)
                     broadcastStateChanged(this@TrackingService, trackingStatus, lastLat ?: 0.0, lastLng ?: 0.0, pointCount, distStr, durStr)
                 }
             }
-        } else if (trackingStatus == TrackingStatus.DWELLING && dist > movementThreshold) {
-            log("Movement detected while dwelling, switching to TRACKING...")
+        } else if (trackingStatus == TrackingStatus.DWELLING && effectiveDist > movementThreshold) {
+            log("Movement detected while dwelling (effectiveDist=$effectiveDist), switching to TRACKING...")
             lastRecordedLat = lat
             lastRecordedLng = lng
-            lastRecordedTimestamp = System.currentTimeMillis()
-            totalDistance += dist
+            lastRecordedTimestamp = now
+            totalDistance += stepDist
             trackingStatus = TrackingStatus.TRACKING
+            dwellOriginLat = null
+            dwellOriginLng = null
             dwellJob = null
             recordPoint(lat, lng, alt)
             updateLocationRequestFrequency()
@@ -468,6 +500,11 @@ class TrackingService : LifecycleService() {
             lastRecordedLat = null
             lastRecordedLng = null
             lastRecordedTimestamp = 0
+            lastFixLat = null
+            lastFixLng = null
+            lastFixTimestamp = 0
+            dwellOriginLat = null
+            dwellOriginLng = null
             filteredLat = 0.0
             filteredLng = 0.0
             lastFilteredLat = 0.0
