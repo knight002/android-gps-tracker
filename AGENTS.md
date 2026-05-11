@@ -22,9 +22,11 @@
 - GPS interval adjusts dynamically: tracking interval (default 5s) while moving, dwelling interval (default 30s) while stationary. Both configurable in Settings.
 - `dwellJob` must be set to `null` both inside the completed dwell coroutine AND in the DWELLING→TRACKING transition, otherwise the dwell timer only fires once (completed Job ref prevents `null` check from passing).
 - GPS noise reduction: spike rejection (discard fixes with speed >15 m/s) + EMA smoothing (α=0.3) on coordinates for dwell detection. Raw coords saved to DB.
+- **v2.10 fix**: Dwell exit uses FIXED `dwellOriginLat/Lng` (set when entering DWELLING), not step-by-step from previous fix. Previously: with 50m threshold, GPS drift of 20m + movement of 30m = both steps <50m = never exited DWELLING.
+- **v2.10 fix**: Spike rejection uses `lastFixLat/Lng/Timestamp` (updates every valid fix), not `lastRecorded*` (only updates in TRACKING). Previously: spike rejection broken in DWELLING because `lastRecordedTimestamp` was frozen.
 
 ## Release
 - Keystore: regenerated at `/tmp/release.jks`, password `password`.
 - Sign: `zipalign` + `apksigner` from build-tools/34.0.0.
 - Upload: `gh release create` with APK (asset name `GPSTracker-signed.apk`).
-- Version naming: `v2.9` tag → `2.9` versionName in build.gradle.
+- Version naming: `v2.10` tag → `2.10` versionName in build.gradle.
