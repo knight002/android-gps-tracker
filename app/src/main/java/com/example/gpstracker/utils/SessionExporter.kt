@@ -10,28 +10,12 @@ import org.json.JSONObject
 
 object SessionExporter {
 
-    private const val PREFS_NAME = "gps_tracker_prefs"
-    private const val KEY_MOVEMENT_THRESHOLD = "movement_threshold"
-    private const val KEY_DWELL_TIME = "dwell_time_seconds"
-    private const val KEY_TRACKING_INTERVAL = "tracking_interval_seconds"
-    private const val KEY_DWELLING_INTERVAL = "dwelling_interval_seconds"
-
     private data class Settings(
         val movementThresholdM: Double,
         val dwellTimeS: Int,
         val trackingIntervalS: Int,
         val dwellingIntervalS: Int
     )
-
-    private fun loadSettings(context: Context): Settings {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        return Settings(
-            movementThresholdM = prefs.getFloat(KEY_MOVEMENT_THRESHOLD, 20.0f).toDouble(),
-            dwellTimeS = prefs.getInt(KEY_DWELL_TIME, 15),
-            trackingIntervalS = prefs.getInt(KEY_TRACKING_INTERVAL, 5),
-            dwellingIntervalS = prefs.getInt(KEY_DWELLING_INTERVAL, 30)
-        )
-    }
 
     private data class SessionJson(
         val startTime: Long,
@@ -45,9 +29,14 @@ object SessionExporter {
         return try {
             val db = AppDatabase.getDatabase(context)
             val sessions = db.sessionDao().getAllSessionsSync()
-            val settings = loadSettings(context)
             val exportData = sessions.map { session ->
                 val points = db.locationPointDao().getPointsBySessionSync(session.id)
+                val settings = Settings(
+                    movementThresholdM = session.movementThresholdM,
+                    dwellTimeS = session.dwellTimeS,
+                    trackingIntervalS = session.trackingIntervalS,
+                    dwellingIntervalS = session.dwellingIntervalS
+                )
                 SessionJson(session.startTime, session.endTime, session.totalPoints, points, settings)
             }
             val json = buildJson(exportData)

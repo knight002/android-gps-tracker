@@ -239,10 +239,15 @@ class TrackingService : LifecycleService() {
         lifecycleScope.launch {
             val db = AppDatabase.getDatabase(this@TrackingService)
             sessionStartTime = System.currentTimeMillis()
+            val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             val session = Session(
                 startTime = sessionStartTime,
                 endTime = null,
-                totalPoints = 0
+                totalPoints = 0,
+                movementThresholdM = prefs.getFloat(KEY_MOVEMENT_THRESHOLD, DEFAULT_MOVEMENT_THRESHOLD_M.toFloat()).toDouble(),
+                dwellTimeS = prefs.getInt(KEY_DWELL_TIME, DEFAULT_DWELL_TIME_S),
+                trackingIntervalS = prefs.getInt(KEY_TRACKING_INTERVAL, DEFAULT_TRACKING_INTERVAL_S),
+                dwellingIntervalS = prefs.getInt(KEY_DWELLING_INTERVAL, DEFAULT_DWELLING_INTERVAL_S)
             )
             currentSessionId = db.sessionDao().insertSession(session)
 

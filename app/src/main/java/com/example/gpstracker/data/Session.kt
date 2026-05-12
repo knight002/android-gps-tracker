@@ -9,5 +9,9 @@ data class Session(
     val id: Long = 0,
     val startTime: Long,
     val endTime: Long?,
-    val totalPoints: Int
+    val totalPoints: Int,
+    val movementThresholdM: Double = 20.0,
+    val dwellTimeS: Int = 15,
+    val trackingIntervalS: Int = 5,
+    val dwellingIntervalS: Int = 30
 )
