@@ -15,6 +15,9 @@
 - Dynamic shortcut registered in `MainActivity.onCreate()` via `ShortcutManager.setDynamicShortcuts()`
 - Static XML fallback in `res/xml/shortcuts.xml` for stock launchers.
 - Intent uses `android.intent.action.VIEW` with `shortcut_action` extra.
+- `ShortcutStartActivity` (v2.11+): transparent theme, starts tracking service directly without showing app UI
+- If permissions missing, opens MainActivity to request them
+- Theme: `Theme.GPSTracker.Transparent` with `android:excludeFromRecents="true"`, `android:noHistory="true"`
 
 ## Tracking Status
 - Three states: `READY`, `TRACKING`, `DWELLING`
@@ -25,14 +28,15 @@
 - **v2.10 fix**: Dwell exit uses FIXED `dwellOriginLat/Lng` (set when entering DWELLING), not step-by-step from previous fix. Previously: with 50m threshold, GPS drift of 20m + movement of 30m = both steps <50m = never exited DWELLING.
 - **v2.10 fix**: Spike rejection uses `lastFixLat/Lng/Timestamp` (updates every valid fix), not `lastRecorded*` (only updates in TRACKING). Previously: spike rejection broken in DWELLING because `lastRecordedTimestamp` was frozen.
 
+## Session Settings (v2.12+)
+- Each session stores its settings in the DB (4 columns in `sessions` table)
+- TrackingService saves current prefs when creating session
+- SessionExporter reads settings from session row (not from current prefs)
+- Old sessions get default values via migration
+
 ## Release
 - Keystore: regenerated at `/tmp/release.jks`, password `password`.
-- Sign: `zipalign` + `apksigner` from build-tools/34.0.0.
+- Sign: `apksigner` from build-tools/34.0.0.
 - Upload: `gh release create` with APK (asset name `GPSTracker-signed.apk`).
-- Version naming: `v2.11` tag → `2.11` versionName in build.gradle.
-
-## App Shortcut (v2.11)
-- Shortcut uses `ShortcutStartActivity` (transparent theme) instead of `MainActivity`
-- Starts tracking service directly without showing app UI
-- If permissions missing, opens MainActivity to request them
-- Theme: `Theme.GPSTracker.Transparent` with `android:excludeFromRecents="true"`, `android:noHistory="true"`
+- Version naming: `v2.12` tag → `2.12` versionName in build.gradle.
+- DB migration (v1→v2): Adds 4 settings columns to `sessions` table (movementThresholdM, dwellTimeS, trackingIntervalS, dwellingIntervalS) with defaults (20.0, 15, 5, 30).
